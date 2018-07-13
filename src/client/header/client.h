@@ -518,4 +518,9 @@ void CL_DrawInventory (void);
 void CL_PredictMovement (void);
 trace_t CL_PMTrace(vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end);
 
+void GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state);
+void GymCapturePlayerStateCL(refdef_t refdef, player_state_t state);
+void GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity);
+qboolean GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]);
+qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]);
 #endif
