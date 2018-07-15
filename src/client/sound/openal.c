@@ -289,6 +289,9 @@ AL_PlayChannel(channel_t *ch)
 	/* Spatialize it */
 	AL_Spatialize(ch);
 
+  /* Capture details of sound that is going to be played */
+	GymCaptureCurrentPlayerSoundStateCL(ch);
+
 	/* Play it */
 	qalSourcePlay(ch->srcnum);
 
@@ -884,4 +887,3 @@ AL_Shutdown(void)
 }
 
 #endif /* USE_OPENAL */
-

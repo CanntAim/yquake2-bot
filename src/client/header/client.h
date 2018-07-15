@@ -53,6 +53,7 @@
 #include "keyboard.h"
 #include "console.h"
 
+#include "../sound/header/local.h"
 #include "../sound/header/cdaudio.h"
 #include "../sound/header/sound.h"
 #include "../sound/header/vorbis.h"
@@ -519,6 +520,7 @@ void CL_PredictMovement (void);
 trace_t CL_PMTrace(vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end);
 
 void GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state);
+void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch);
 void GymCapturePlayerStateCL(refdef_t refdef, player_state_t state);
 void GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity);
 qboolean GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]);

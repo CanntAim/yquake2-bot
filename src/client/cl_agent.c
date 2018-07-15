@@ -62,11 +62,15 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity){
   qboolean front = GymCheckIfInFrontCL(refdef.viewangles,
     refdef.vieworg,
     entity->origin);
+  qboolean looking = GymCheckIfInFrontCL(entity->angles,
+    entity->origin,
+    refdef.vieworg);
   qboolean visible = GymCheckIfIsVisbleCL(refdef.viewangles,
-      refdef.vieworg,
-      entity->origin);
+    refdef.vieworg,
+    entity->origin);
   printf("Is in front of player: %d\n", front);
   printf("Is visible to player: %d\n", visible);
+  printf("Entity looking at player: %d\n", looking);
 }
 
 qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]){
@@ -74,11 +78,6 @@ qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]){
   vec3_t source_vec;
   vec3_t dest_vec;
   vec3_t view_vec;
-  vec3_t zero_vec;
-
-  zero_vec[0] = 0.0;
-  zero_vec[1] = 0.0;
-  zero_vec[3] = 0.0;
 
   source_vec[0] = source[0];
   source_vec[1] = source[1];
@@ -150,4 +149,13 @@ GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state)
     entity = &refdef.entities[i];
 		GymCaptureEntityStateCL(refdef, entity);
   }
+}
+
+void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
+{
+  printf("Player heard sound: %s ...x: %f ...y: %f ...z: %f\n",
+	ch->sfx->name,
+	ch->origin[0],
+  ch->origin[1],
+  ch->origin[2]);
 }
