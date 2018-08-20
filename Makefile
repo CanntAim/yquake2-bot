@@ -470,6 +470,8 @@ release/quake2 : CFLAGS += -DOGG
 release/quake2 : LDFLAGS += -lvorbis -lvorbisfile -logg
 endif
 
+release/quake2 : LDFLAGS += -pthread
+
 ifeq ($(WITH_OPENAL),yes)
 ifeq ($(DLOPEN_OPENAL),yes)
 ifeq ($(YQ2_OSTYPE), OpenBSD)

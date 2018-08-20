@@ -40,12 +40,21 @@
 #define BLASTER_PARTICLE_COLOR 0xe0
 #define INSTANT_PARTICLE -10000.0
 
+/* rpc service related macros */
+#define DATA_SIZE 8192
+#define PROG ((u_long) 0x20000001)   /* server program (suite) number */
+#define VERS ((u_long) 1)    /* program version number */
+#define READDATA ((u_long) 1)    /* procedure number for look-up */
+
 #include <math.h>
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <stdbool.h>
+#include <pthread.h>
+#include <rpc/rpc.h>
 
 #include "ref.h"
 #include "vid.h"
@@ -519,10 +528,14 @@ void CL_DrawInventory (void);
 void CL_PredictMovement (void);
 trace_t CL_PMTrace(vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end);
 
+extern char * GymCollect();
+extern bool_t XDRCollect();
 void GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state);
 void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch);
 void GymCapturePlayerStateCL(refdef_t refdef, player_state_t state);
 void GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity);
+void GymRegisterAndStartRPC();
+void GymStartServer();
 qboolean GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]);
 qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]);
 #endif

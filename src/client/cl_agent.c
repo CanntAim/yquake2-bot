@@ -26,8 +26,34 @@
 
 #include "header/client.h"
 
+qboolean RPCServiceStart = false;
+
+bool_t
+XDRCollect(XDR *xdrs, char *objp)
+{ return ( xdr_string(xdrs, &objp, DATA_SIZE) ); }
+
+char *
+GymCollect(){
+	return "test";
+}
+
+void GymRegisterAndStartRPC(){
+	registerrpc(PROG, VERS, READDATA,
+		GymCollect, XDRCollect, XDRCollect);
+	svc_run();
+	RPCServiceStart = true;
+}
+
+void GymStartServer(){
+	if(!RPCServiceStart){
+		pthread_t thread;
+		pthread_create(&thread, NULL, GymRegisterAndStartRPC, NULL);
+	}
+}
+
 void
 GymCapturePlayerStateCL(refdef_t refdef, player_state_t state){
+	GymStartServer();
 	/* Seperate frame */
 	printf("...\n");
 	printf("...Current View:\n");
