@@ -31,123 +31,132 @@ qboolean SilentSoundCapture = true;
 qboolean SilentPlayerStateCapture = true;
 qboolean SilentEntityCapture = true;
 
+int connfd, conncl, connrc;
+
 char *
 GymCollect(){
-	return "test";
+  return "test";
 }
 
 void error(char *msg)
 {
-    perror(msg);
-    exit(1);
+  perror(msg);
+  exit(1);
 }
 
 void GymOpenSocket(){
-	struct sockaddr_un addr;
-	char *socket_path = "../quake_socket";
+  struct sockaddr_un addr;
+  char *socket_path = "../quake_socket";
   char buf[100];
-  int fd,cl,rc;
-
-  if ( (fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+  
+  if ( (connfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
     perror("socket error");
     exit(-1);
   }
 
-	memset(&addr, 0, sizeof(addr));
+  memset(&addr, 0, sizeof(addr));
   addr.sun_family = AF_UNIX;
   strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path)-1);
   unlink(socket_path);
 
-	if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+  if (bind(connfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
     perror("bind error");
     exit(-1);
   }
 
-  if (listen(fd, 5) == -1) {
+  if (listen(connfd, 5) == -1) {
     perror("listen error");
     exit(-1);
   }
 
   while (1) {
-    if ((cl = accept(fd, NULL, NULL)) == -1) {
+    if ((conncl = accept(connfd, NULL, NULL)) == -1) {
       perror("accept error");
       continue;
     }
 
-    while ((rc=read(cl,buf,sizeof(buf))) > 0) {
-      printf("read %u bytes: %.*s\n", rc, rc, buf);
+    while ((connrc = read(conncl, buf, sizeof(buf))) > 0) {
+      printf("read %u bytes: %.*s\n", connrc, connrc, buf);
     }
 
-    if (rc == -1) {
+    if (connrc == -1) {
       perror("read");
       exit(-1);
     }
 
-    else if (rc == 0) {
+    else if (connrc == 0) {
       printf("EOF\n");
-      close(cl);
+      close(conncl);
     }
-	}
+  }
 }
 
 void GymStartServer(){
-	if(!OpenSocket){
-		pthread_t thread;
-		pthread_create(&thread, NULL, GymOpenSocket, NULL);
-		OpenSocket = true;
-	}
+  if(!OpenSocket){
+    pthread_t thread;
+    pthread_create(&thread, NULL, GymOpenSocket, NULL);
+    OpenSocket = true;
+  }
 }
 
 void
 GymCapturePlayerStateCL(refdef_t refdef, player_state_t state){
-	GymStartServer();
-	/* Seperate frame */
-	if(!SilentPlayerStateCapture){
-		printf("...\n");
-		printf("...Current View:\n");
-		printf("...\n");
-		printf("Position of player: ...x: %f ...y: %f ...z: %f\n",
-		refdef.vieworg[0],
-		refdef.vieworg[1],
-		refdef.vieworg[2]);
-		printf("View angle of player: ...x: %f ...y: %f ...z: %f\n",
-		refdef.viewangles[0],
-		refdef.viewangles[1],
-		refdef.viewangles[2]);
-		printf("Player Static State: \n");
-		printf("Health: %d\n", state.stats[STAT_HEALTH]);
-		printf("Armor: %d\n", state.stats[STAT_ARMOR]);
-		printf("Time: %d\n", state.stats[STAT_TIMER]);
-		printf("Frags: %d\n", state.stats[STAT_FRAGS]);
-		//printf("Inventory: %d\n", state.stat[STAT_HEALTH]);
-		printf("Current Armor Type: %d\n", state.stats[STAT_ARMOR_ICON]);
-		printf("Current Weapon: %d\n", state.stats[STAT_AMMO_ICON]);
+  /* Start server */
+  GymStartServer();
+  
+  /* Seperate frame */
+  if(!SilentPlayerStateCapture){
+    printf("...\n");
+    printf("...Current View:\n");
+    printf("...\n");
+    printf("Position of player: ...x: %f ...y: %f ...z: %f\n",
+	   refdef.vieworg[0],
+	   refdef.vieworg[1],
+	   refdef.vieworg[2]);
+    printf("View angle of player: ...x: %f ...y: %f ...z: %f\n",
+	   refdef.viewangles[0],
+	   refdef.viewangles[1],
+	   refdef.viewangles[2]);
+    printf("Player Static State: \n");
+    printf("Health: %d\n", state.stats[STAT_HEALTH]);
+    printf("Armor: %d\n", state.stats[STAT_ARMOR]);
+    printf("Time: %d\n", state.stats[STAT_TIMER]);
+    printf("Frags: %d\n", state.stats[STAT_FRAGS]);
+    //printf("Inventory: %d\n", state.stat[STAT_HEALTH]);
+    printf("Current Armor Type: %d\n", state.stats[STAT_ARMOR_ICON]);
+    printf("Current Weapon: %d\n", state.stats[STAT_AMMO_ICON]);
 
-		printf("...Entities for current frame:\n");
-		printf("...\n");
-	}
+    printf("...Entities for current frame:\n");
+    printf("...\n");
+  }
+
+  /* Send player state information */
+  char buf[100];
+  strcpy(buf, "Tell client current state");
+  write(conncl, buf, 25);
+
 }
 
 void
 GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity){
-	if(!SilentEntityCapture){
-		printf("drawing entity: %s ...x: %f ...y: %f ...z: %f\n", entity->model,
-		entity->origin[0],
-		entity->origin[1],
-		entity->origin[2]);
-		qboolean front = GymCheckIfInFrontCL(refdef.viewangles,
-			refdef.vieworg,
-			entity->origin);
-		qboolean looking = GymCheckIfInFrontCL(entity->angles,
-			entity->origin,
-			refdef.vieworg);
-		qboolean visible = GymCheckIfIsVisbleCL(refdef.viewangles,
-			refdef.vieworg,
-			entity->origin);
-		printf("Is in front of player: %d\n", front);
-		printf("Is visible to player: %d\n", visible);
-		printf("Entity looking at player: %d\n", looking);
-	}
+  if(!SilentEntityCapture){
+    printf("drawing entity: %s ...x: %f ...y: %f ...z: %f\n", entity->model,
+	   entity->origin[0],
+	   entity->origin[1],
+	   entity->origin[2]);
+    qboolean front = GymCheckIfInFrontCL(refdef.viewangles,
+					 refdef.vieworg,
+					 entity->origin);
+    qboolean looking = GymCheckIfInFrontCL(entity->angles,
+					   entity->origin,
+					   refdef.vieworg);
+    qboolean visible = GymCheckIfIsVisbleCL(refdef.viewangles,
+					    refdef.vieworg,
+					    entity->origin);
+    printf("Is in front of player: %d\n", front);
+    printf("Is visible to player: %d\n", visible);
+    printf("Entity looking at player: %d\n", looking);
+  }
 }
 
 qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]){
@@ -171,9 +180,9 @@ qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]){
 
   trace = CM_BoxTrace(source_vec, dest_vec, vec3_origin, vec3_origin, 0, MASK_OPAQUE);
   if (trace.fraction == 1.0)
-  {
-    return true;
-  }
+    {
+      return true;
+    }
 
   return false;
 }
@@ -209,9 +218,9 @@ GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]){
   dot = DotProduct(result_vec, forward_vec);
 
   if (dot > 0.3)
-  {
-    return true;
-  }
+    {
+      return true;
+    }
 
   return false;
 }
@@ -222,19 +231,19 @@ GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state)
   entity_t *entity;
   GymCapturePlayerStateCL(refdef, state);
   for (int i = 0; i < refdef.num_entities; i++)
-	{
-    entity = &refdef.entities[i];
-		GymCaptureEntityStateCL(refdef, entity);
-  }
+    {
+      entity = &refdef.entities[i];
+      GymCaptureEntityStateCL(refdef, entity);
+    }
 }
 
 void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
 {
-	if(!SilentSoundCapture){
-		printf("Player heard sound: %s ...x: %f ...y: %f ...z: %f\n",
-		ch->sfx->name,
-		ch->origin[0],
-		ch->origin[1],
-		ch->origin[2]);
-	}
+  if(!SilentSoundCapture){
+    printf("Player heard sound: %s ...x: %f ...y: %f ...z: %f\n",
+	   ch->sfx->name,
+	   ch->origin[0],
+	   ch->origin[1],
+	   ch->origin[2]);
+  }
 }

@@ -6,27 +6,26 @@ sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 
 # Connect the socket to the port where the server is listening
 server_address = "../quake_socket"
-print >> sys.stderr, "connecting to %s" % server_address
+print("connecting to %s" % server_address, file=sys.stderr)
 
 try:
     sock.connect(server_address)
-except socket.error, msg:
-    print >>sys.stderr, msg
+except socket.error as msg:
+    print(msg, file=sys.stderr)
 
 try:
     # Send data
-    message = 'This is the message.  It will be repeated.'
-    print >> sys.stderr, 'sending "%s"' % message
-    sock.sendall(message)
+    message = 'Connected to server.'
+    print('sending "%s"' % message, file=sys.stderr)
+    sock.sendall(message.encode())
 
-    amount_received = 0
-    amount_expected = len(message)
-
-    while amount_received < amount_expected:
-        data = sock.recv(16)
+    while True:
+        data = sock.recv(25)
         amount_received += len(data)
-        print >>sys.stderr, 'received "%s"' % data
+        print('received "%s"' % data, file=sys.stderr)
+        message = 'Tell server what to do.'
+        sock.send(message.encode())
 
 finally:
-    print >>sys.stderr, 'closing socket'
+    print('closing socket', file=sys.stderr)
     sock.close()
