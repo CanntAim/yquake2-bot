@@ -21,7 +21,6 @@ try:
 
     while True:
         data = sock.recv(25)
-        amount_received += len(data)
         print('received "%s"' % data, file=sys.stderr)
         message = 'Tell server what to do.'
         sock.send(message.encode())
