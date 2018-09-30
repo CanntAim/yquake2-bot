@@ -33,11 +33,6 @@ qboolean SilentEntityCapture = true;
 
 int connfd, conncl, connrc;
 
-char *
-GymCollect(){
-  return "test";
-}
-
 void error(char *msg)
 {
   perror(msg);
@@ -47,7 +42,7 @@ void error(char *msg)
 void GymOpenSocket(){
   struct sockaddr_un addr;
   char *socket_path = "../quake_socket";
-  char buf[100];
+  char buf[500];
   
   if ( (connfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
     perror("socket error");
@@ -244,8 +239,9 @@ GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state)
   /* Start server */
   GymStartServer();
 
-  char buf[3000];
+  char buf[10000];
   entity_t *entity;
+
   GymCapturePlayerStateCL(refdef, state, buf);
   for (int i = 0; i < refdef.num_entities; i++)
     {
@@ -255,6 +251,7 @@ GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state)
 
   /* Send player state information */
   write(conncl, buf, strlen(buf));
+ 
 }
 
 void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
@@ -266,8 +263,9 @@ void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
 	   ch->origin[1],
 	   ch->origin[2]);
   }
-  char buf[500];
-  printf(buf, "hs%s,hsx%f,hsy%f,hsz%f",
+ 
+  char buf[10000];
+  sprintf(buf, "hs%s,hsx%f,hsy%f,hsz%f",
 	 ch->sfx->name,
 	 ch->origin[0],
 	 ch->origin[1],
