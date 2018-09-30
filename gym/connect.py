@@ -20,7 +20,7 @@ try:
     sock.sendall(message.encode())
 
     while True:
-        data = sock.recv(25)
+        data = sock.recv(250)
         print('received "%s"' % data, file=sys.stderr)
         message = 'Tell server what to do.'
         sock.send(message.encode())

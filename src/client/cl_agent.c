@@ -77,6 +77,7 @@ void GymOpenSocket(){
 
     while ((connrc = read(conncl, buf, sizeof(buf))) > 0) {
       printf("read %u bytes: %.*s\n", connrc, connrc, buf);
+      //IN_AttackDown();
     }
 
     if (connrc == -1) {
@@ -100,10 +101,7 @@ void GymStartServer(){
 }
 
 void
-GymCapturePlayerStateCL(refdef_t refdef, player_state_t state){
-  /* Start server */
-  GymStartServer();
-  
+GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, char* buf){
   /* Seperate frame */
   if(!SilentPlayerStateCapture){
     printf("...\n");
@@ -129,34 +127,49 @@ GymCapturePlayerStateCL(refdef_t refdef, player_state_t state){
     printf("...Entities for current frame:\n");
     printf("...\n");
   }
-
-  /* Send player state information */
-  char buf[100];
-  strcpy(buf, "Tell client current state");
-  write(conncl, buf, 25);
-
+  sprintf(buf,"px%f,py%f,pz%f,vx%f,vy%f,vz%f,h%d,a%d,t%d,f%d,at%d,w%d",
+	  refdef.vieworg[0],
+	  refdef.vieworg[1],
+	  refdef.vieworg[2],
+	  refdef.viewangles[0],
+	  refdef.viewangles[1],
+	  refdef.viewangles[2],
+	  state.stats[STAT_HEALTH],
+	  state.stats[STAT_ARMOR],
+	  state.stats[STAT_TIMER],
+	  state.stats[STAT_FRAGS],
+	  state.stats[STAT_ARMOR_ICON],
+	  state.stats[STAT_AMMO_ICON]);
 }
 
 void
-GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity){
+GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, char* buf){
+  qboolean front = GymCheckIfInFrontCL(refdef.viewangles,
+					 refdef.vieworg,
+					 entity->origin);
+  qboolean looking = GymCheckIfInFrontCL(entity->angles,
+					   entity->origin,
+					   refdef.vieworg);
+  qboolean visible = GymCheckIfIsVisbleCL(refdef.viewangles,
+					    refdef.vieworg,
+					    entity->origin);
   if(!SilentEntityCapture){
     printf("drawing entity: %s ...x: %f ...y: %f ...z: %f\n", entity->model,
 	   entity->origin[0],
 	   entity->origin[1],
 	   entity->origin[2]);
-    qboolean front = GymCheckIfInFrontCL(refdef.viewangles,
-					 refdef.vieworg,
-					 entity->origin);
-    qboolean looking = GymCheckIfInFrontCL(entity->angles,
-					   entity->origin,
-					   refdef.vieworg);
-    qboolean visible = GymCheckIfIsVisbleCL(refdef.viewangles,
-					    refdef.vieworg,
-					    entity->origin);
     printf("Is in front of player: %d\n", front);
     printf("Is visible to player: %d\n", visible);
     printf("Entity looking at player: %d\n", looking);
   }
+  sprintf(buf+strlen(buf),"e%s,ex%f,ey%f,ez%f,ef%d,ev%d,el%d",
+	  entity->model,
+	  entity->origin[0],
+	  entity->origin[1],
+	  entity->origin[2],
+	  front,
+	  visible,
+	  looking);
 }
 
 qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]){
@@ -228,13 +241,20 @@ GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]){
 void
 GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state)
 {
+  /* Start server */
+  GymStartServer();
+
+  char buf[3000];
   entity_t *entity;
-  GymCapturePlayerStateCL(refdef, state);
+  GymCapturePlayerStateCL(refdef, state, buf);
   for (int i = 0; i < refdef.num_entities; i++)
     {
       entity = &refdef.entities[i];
-      GymCaptureEntityStateCL(refdef, entity);
+      GymCaptureEntityStateCL(refdef, entity, buf);
     }
+
+  /* Send player state information */
+  write(conncl, buf, strlen(buf));
 }
 
 void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
@@ -246,4 +266,11 @@ void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
 	   ch->origin[1],
 	   ch->origin[2]);
   }
+  char buf[500];
+  printf(buf, "hs%s,hsx%f,hsy%f,hsz%f",
+	 ch->sfx->name,
+	 ch->origin[0],
+	 ch->origin[1],
+	 ch->origin[2]);
+  write(conncl, buf, strlen(buf));
 }
