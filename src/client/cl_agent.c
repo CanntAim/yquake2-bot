@@ -122,7 +122,7 @@ GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, char* buf){
     printf("...Entities for current frame:\n");
     printf("...\n");
   }
-  sprintf(buf,"player,px,%f,py,%f,pz,%f,vx,%f,vy,%f,vz,%f,h,%d,a,%d,t,%d,f,%d,at,%d,w,%d",
+  sprintf(buf,"player,%f,%f,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d",
 	  refdef.vieworg[0],
 	  refdef.vieworg[1],
 	  refdef.vieworg[2],
@@ -157,7 +157,7 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, char* buf){
     printf("Is visible to player: %d\n", visible);
     printf("Entity looking at player: %d\n", looking);
   }
-  sprintf(buf+strlen(buf),"entity,e,%s,ex,%f,ey,%f,ez,%f,ef,%d,ev,%d,el,%d,",
+  sprintf(buf+strlen(buf),"entity,%s,%f,%f,%f,%d,%d,%d",
 	  entity->model,
 	  entity->origin[0],
 	  entity->origin[1],
@@ -265,7 +265,7 @@ void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
   }
  
   char buf[10000];
-  sprintf(buf, "sound,hs,%s,hsx,%f,hsy,%f,hsz,%f",
+  sprintf(buf, "sound,%s,%f,%f,%f",
 	 ch->sfx->name,
 	 ch->origin[0],
 	 ch->origin[1],
