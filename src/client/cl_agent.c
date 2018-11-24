@@ -122,7 +122,8 @@ GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, char* buf){
     printf("...Entities for current frame:\n");
     printf("...\n");
   }
-  sprintf(buf,"player,%f,%f,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d",
+  sprintf(buf,"player,%d,%f,%f,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d",
+	  refdef.num_entities,
 	  refdef.vieworg[0],
 	  refdef.vieworg[1],
 	  refdef.vieworg[2],
@@ -157,7 +158,7 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, char* buf){
     printf("Is visible to player: %d\n", visible);
     printf("Entity looking at player: %d\n", looking);
   }
-  sprintf(buf+strlen(buf),"entity,%s,%f,%f,%f,%d,%d,%d",
+  sprintf(buf+strlen(buf),"%s,%f,%f,%f,%d,%d,%d",
 	  entity->model,
 	  entity->origin[0],
 	  entity->origin[1],
