@@ -523,12 +523,33 @@ void CL_DrawInventory (void);
 void CL_PredictMovement (void);
 trace_t CL_PMTrace(vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end);
 
+typedef struct
+{
+  float playerPositionX; // 1000
+  float playerPositionY; // 1000
+  float playerPositionZ; // 1000
+  float playerViewAngleX; // 100
+  float playerViewAngleY; // 100
+  float playerViewAngleZ; // 100
+  int time; // 600
+  int frags; // 10
+  int enemyLooking; // 2
+  float enemySoundDistance; // 700
+  float enemyPositionX; // 100
+  float enemyPositionY; // 100
+  float enemyPositionZ; // 100
+  float projectileDistance; // 200
+} message_t;
+
+
+void GymMessageToBuffer(message_t *message, char buf[10000]);
 void GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state);
 void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch);
-void GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, char* buf);
-void GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, char* buf);
+void GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, message_t *message);
+void GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior, message_t *message);
 void GymOpenSocket();
 void GymStartServer();
 qboolean GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]);
-qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]);
+qboolean GymCheckIfIsVisibleCL(float source[3], float dest[3]);
+float GymCheckDistanceTo(float source[3], float dest[3]);
 #endif

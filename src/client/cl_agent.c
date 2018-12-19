@@ -30,6 +30,7 @@ qboolean OpenSocket = false;
 qboolean SilentSoundCapture = true;
 qboolean SilentPlayerStateCapture = true;
 qboolean SilentEntityCapture = true;
+message_t *PriorMessage;
 
 int connfd, conncl, connrc;
 
@@ -96,7 +97,7 @@ void GymStartServer(){
 }
 
 void
-GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, char* buf){
+GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, message_t *message){
   /* Seperate frame */
   if(!SilentPlayerStateCapture){
     printf("...\n");
@@ -115,40 +116,38 @@ GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, char* buf){
     printf("Armor: %d\n", state.stats[STAT_ARMOR]);
     printf("Time: %d\n", state.stats[STAT_TIMER]);
     printf("Frags: %d\n", state.stats[STAT_FRAGS]);
-    //printf("Inventory: %d\n", state.stat[STAT_HEALTH]);
     printf("Current Armor Type: %d\n", state.stats[STAT_ARMOR_ICON]);
     printf("Current Weapon: %d\n", state.stats[STAT_AMMO_ICON]);
 
     printf("...Entities for current frame:\n");
     printf("...\n");
   }
-  sprintf(buf,"player,%d,%f,%f,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d",
-	  refdef.num_entities,
-	  refdef.vieworg[0],
-	  refdef.vieworg[1],
-	  refdef.vieworg[2],
-	  refdef.viewangles[0],
-	  refdef.viewangles[1],
-	  refdef.viewangles[2],
-	  state.stats[STAT_HEALTH],
-	  state.stats[STAT_ARMOR],
-	  state.stats[STAT_TIMER],
-	  state.stats[STAT_FRAGS],
-	  state.stats[STAT_ARMOR_ICON],
-	  state.stats[STAT_AMMO_ICON]);
+  message->playerPositionX = refdef.vieworg[0];
+  message->playerPositionY = refdef.vieworg[1];
+  message->playerPositionZ = refdef.vieworg[2];
+  message->playerViewAngleX = refdef.viewangles[0];
+  message->playerViewAngleY = refdef.viewangles[1];
+  message->playerViewAngleZ = refdef.viewangles[2];
+  message->time = state.stats[STAT_TIMER];
+  message->frags = state.stats[STAT_FRAGS];
 }
 
 void
-GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, char* buf){
+GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior, message_t *message){
   qboolean front = GymCheckIfInFrontCL(refdef.viewangles,
 					 refdef.vieworg,
 					 entity->origin);
+
   qboolean looking = GymCheckIfInFrontCL(entity->angles,
 					   entity->origin,
 					   refdef.vieworg);
-  qboolean visible = GymCheckIfIsVisbleCL(refdef.viewangles,
-					    refdef.vieworg,
-					    entity->origin);
+
+  qboolean visible = GymCheckIfIsVisibleCL(refdef.vieworg,
+					   entity->origin);
+
+  float distance = GymCheckDistanceTo(refdef.vieworg,
+				      entity->origin);
+  
   if(!SilentEntityCapture){
     printf("drawing entity: %s ...x: %f ...y: %f ...z: %f\n", entity->model,
 	   entity->origin[0],
@@ -158,21 +157,23 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, char* buf){
     printf("Is visible to player: %d\n", visible);
     printf("Entity looking at player: %d\n", looking);
   }
-  sprintf(buf+strlen(buf),"%s,%f,%f,%f,%d,%d,%d",
-	  entity->model,
-	  entity->origin[0],
-	  entity->origin[1],
-	  entity->origin[2],
-	  front,
-	  visible,
-	  looking);
+  
+  if(strstr(entity->model, "player") != NULL && front && visible) {
+    message->enemyLooking = looking;
+    message->enemyPositionX = entity->origin[0];
+    message->enemyPositionY = entity->origin[1];
+    message->enemyPositionZ = entity->origin[2];
+  } else if(strstr(entity->model, "rocket") != NULL
+	  || strstr(entity->model, "grenade") != NULL && distance < prior) {
+    prior = distance;
+    message->projectileDistance = distance;
+  }    
 }
 
-qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]){
+qboolean GymCheckIfIsVisibleCL(float source[3], float dest[3]){
   //Given variables
   vec3_t source_vec;
   vec3_t dest_vec;
-  vec3_t view_vec;
 
   source_vec[0] = source[0];
   source_vec[1] = source[1];
@@ -182,9 +183,6 @@ qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]){
   dest_vec[1] = dest[1];
   dest_vec[2] = dest[2];
 
-  view_vec[0] = view[0];
-  view_vec[1] = view[1];
-  view_vec[2] = view[2];
   trace_t trace;
 
   trace = CM_BoxTrace(source_vec, dest_vec, vec3_origin, vec3_origin, 0, MASK_OPAQUE);
@@ -192,7 +190,6 @@ qboolean GymCheckIfIsVisbleCL(float view[3], float source[3], float dest[3]){
     {
       return true;
     }
-
   return false;
 }
 
@@ -234,6 +231,16 @@ GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]){
   return false;
 }
 
+float
+GymCheckDistanceTo(float source[3], float dest[3])
+{
+  vec3_t difference;
+  difference[0] = dest[0] - source[0];
+  difference[1] = dest[1] - source[1];
+  difference[2] = dest[2] - source[2];
+  return powf(powf(difference[0],2) + powf(difference[1],2) + powf(difference[2],2), .5);
+}
+
 void
 GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state)
 {
@@ -242,16 +249,18 @@ GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state)
 
   char buf[10000];
   entity_t *entity;
+  message_t *message;
+  float prior = 99999.0;
 
-  GymCapturePlayerStateCL(refdef, state, buf);
+  GymCapturePlayerStateCL(refdef, state, message);
   for (int i = 0; i < refdef.num_entities; i++)
     {
       entity = &refdef.entities[i];
-      GymCaptureEntityStateCL(refdef, entity, buf);
+      GymCaptureEntityStateCL(refdef, entity, prior, message);
     }
 
-  /* Send player state information */
-  write(conncl, buf, strlen(buf));
+  PriorMessage = message;
+  GymMessageToBuffer(message, buf);
  
 }
 
@@ -264,12 +273,36 @@ void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
 	   ch->origin[1],
 	   ch->origin[2]);
   }
- 
+
   char buf[10000];
-  sprintf(buf, "sound,%s,%f,%f,%f",
-	 ch->sfx->name,
-	 ch->origin[0],
-	 ch->origin[1],
-	 ch->origin[2]);
+  vec3_t source;
+  vec3_t dest;
+  source[0] = PriorMessage->playerPositionX;
+  source[1] = PriorMessage->playerPositionY;
+  source[2] = PriorMessage->playerPositionZ;
+  dest[0] = ch->origin[0];
+  dest[1] = ch->origin[1];
+  dest[2] = ch->origin[2];
+  PriorMessage->enemySoundDistance = GymCheckDistanceTo(source, dest);
+  GymMessageToBuffer(PriorMessage, buf);
+}
+
+void GymMessageToBuffer(message_t *message, char buf[10000])
+{
+  sprintf(buf, "%f,%f,%f,%f,%f,%f,%d,%d,%d,%f,%f,%f,%f,%f",
+	  message->playerPositionX,
+	  message->playerPositionY,
+	  message->playerPositionZ,
+	  message->playerViewAngleX,
+	  message->playerViewAngleY,
+	  message->playerViewAngleZ,
+	  message->time,
+	  message->frags,
+	  message->enemyLooking,
+	  message->enemySoundDistance,
+	  message->enemyPositionX,
+	  message->enemyPositionY,
+	  message->enemyPositionZ,
+	  message->projectileDistance);
   write(conncl, buf, strlen(buf));
 }

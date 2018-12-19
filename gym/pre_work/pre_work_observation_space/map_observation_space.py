@@ -14,7 +14,34 @@ class map_observation_space:
     def _parse(self, file_):
         for line in file_:
             for word in line.split():
-                if "%s" not in word and "%i" not in word:
+                if "%s" not in word \
+                   and "%i" not in word \
+                   and "monsters" not in word \
+                   and "gibs" not in word \
+                   and "world" not in word \
+                   and "tank" not in word \
+                   and "soldier" not in word \
+                   and "sprites" not in word \
+                   and "mutant" not in word \
+                   and "ships" not in word \
+                   and "keys" not in word \
+                   and "deadbods" not in word \
+                   and "makron" not in word \
+                   and "medic" not in word \
+                   and "infantry" not in word \
+                   and "hover" not in word \
+                   and "gladiator" not in word \
+                   and "gunner" not in word \
+                   and "flyer" not in word \
+                   and "flipper" not in word \
+                   and "floater" not in word \
+                   and "chick" not in word \
+                   and "brain" not in word \
+                   and "boss" not in word \
+                   and "berserk" not in word \
+                   and "insane" not in word \
+                   and "menu" not in word \
+                   and "talk" not in word:
                     self.observations[word] = None
 
     def _write_observations(self, filename):
