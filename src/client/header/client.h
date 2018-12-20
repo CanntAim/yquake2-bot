@@ -541,15 +541,15 @@ typedef struct
   float projectileDistance; // 200
 } message_t;
 
-
-void GymMessageToBuffer(message_t *message, char buf[10000]);
+void GymInitializeMessage();
+void GymMessageToBuffer(message_t message, char buf[10000]);
 void GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state);
 void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch);
-void GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, message_t *message);
-void GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior, message_t *message);
+void GymCapturePlayerStateCL(refdef_t refdef, player_state_t state);
+void GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior);
 void GymOpenSocket();
 void GymStartServer();
-qboolean GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]);
-qboolean GymCheckIfIsVisibleCL(float source[3], float dest[3]);
+int GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]);
+int GymCheckIfIsVisibleCL(float source[3], float dest[3]);
 float GymCheckDistanceTo(float source[3], float dest[3]);
 #endif

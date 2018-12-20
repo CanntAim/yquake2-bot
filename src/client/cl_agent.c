@@ -30,7 +30,7 @@ qboolean OpenSocket = false;
 qboolean SilentSoundCapture = true;
 qboolean SilentPlayerStateCapture = true;
 qboolean SilentEntityCapture = true;
-message_t *PriorMessage;
+message_t Message;
 
 int connfd, conncl, connrc;
 
@@ -40,7 +40,25 @@ void error(char *msg)
   exit(1);
 }
 
-void GymOpenSocket(){
+void
+GymInitializeMessage(){
+  Message.playerPositionX = -99999.0;
+  Message.playerPositionY = -99999.0;
+  Message.playerPositionZ = -99999.0;
+  Message.playerViewAngleX = -99999.0;
+  Message.playerViewAngleY = -99999.0;
+  Message.playerViewAngleZ = -99999.0;
+  Message.time = -1;
+  Message.frags = -1;
+  Message.enemyLooking = -1;
+  Message.enemyPositionX = -99999.0;
+  Message.enemyPositionY = -99999.0;
+  Message.enemyPositionZ = -99999.0;
+  Message.projectileDistance = -99999.0;
+}
+
+void
+GymOpenSocket(){
   struct sockaddr_un addr;
   char *socket_path = "../quake_socket";
   char buf[500];
@@ -73,7 +91,6 @@ void GymOpenSocket(){
 
     while ((connrc = read(conncl, buf, sizeof(buf))) > 0) {
       printf("read %u bytes: %.*s\n", connrc, connrc, buf);
-      //IN_AttackDown();
     }
 
     if (connrc == -1) {
@@ -88,16 +105,18 @@ void GymOpenSocket(){
   }
 }
 
-void GymStartServer(){
+void
+GymStartServer(){
   if(!OpenSocket){
     pthread_t thread;
     pthread_create(&thread, NULL, GymOpenSocket, NULL);
+    GymInitializeMessage();
     OpenSocket = true;
   }
 }
 
 void
-GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, message_t *message){
+GymCapturePlayerStateCL(refdef_t refdef, player_state_t state){
   /* Seperate frame */
   if(!SilentPlayerStateCapture){
     printf("...\n");
@@ -122,27 +141,27 @@ GymCapturePlayerStateCL(refdef_t refdef, player_state_t state, message_t *messag
     printf("...Entities for current frame:\n");
     printf("...\n");
   }
-  message->playerPositionX = refdef.vieworg[0];
-  message->playerPositionY = refdef.vieworg[1];
-  message->playerPositionZ = refdef.vieworg[2];
-  message->playerViewAngleX = refdef.viewangles[0];
-  message->playerViewAngleY = refdef.viewangles[1];
-  message->playerViewAngleZ = refdef.viewangles[2];
-  message->time = state.stats[STAT_TIMER];
-  message->frags = state.stats[STAT_FRAGS];
+  Message.playerPositionX = refdef.vieworg[0];
+  Message.playerPositionY = refdef.vieworg[1];
+  Message.playerPositionZ = refdef.vieworg[2];
+  Message.playerViewAngleX = refdef.viewangles[0];
+  Message.playerViewAngleY = refdef.viewangles[1];
+  Message.playerViewAngleZ = refdef.viewangles[2];
+  Message.time = state.stats[STAT_TIMER];
+  Message.frags = state.stats[STAT_FRAGS];
 }
 
 void
-GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior, message_t *message){
-  qboolean front = GymCheckIfInFrontCL(refdef.viewangles,
+GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
+  int front = GymCheckIfInFrontCL(refdef.viewangles,
 					 refdef.vieworg,
 					 entity->origin);
 
-  qboolean looking = GymCheckIfInFrontCL(entity->angles,
+  int looking = GymCheckIfInFrontCL(entity->angles,
 					   entity->origin,
 					   refdef.vieworg);
 
-  qboolean visible = GymCheckIfIsVisibleCL(refdef.vieworg,
+  int visible = GymCheckIfIsVisibleCL(refdef.vieworg,
 					   entity->origin);
 
   float distance = GymCheckDistanceTo(refdef.vieworg,
@@ -159,18 +178,19 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior, message_
   }
   
   if(strstr(entity->model, "player") != NULL && front && visible) {
-    message->enemyLooking = looking;
-    message->enemyPositionX = entity->origin[0];
-    message->enemyPositionY = entity->origin[1];
-    message->enemyPositionZ = entity->origin[2];
+    Message.enemyLooking = looking;
+    Message.enemyPositionX = entity->origin[0];
+    Message.enemyPositionY = entity->origin[1];
+    Message.enemyPositionZ = entity->origin[2];
   } else if(strstr(entity->model, "rocket") != NULL
-	  || strstr(entity->model, "grenade") != NULL && distance < prior) {
-    prior = distance;
-    message->projectileDistance = distance;
+	  || strstr(entity->model, "grenade") != NULL
+	    && distance < Message.projectileDistance) {
+    Message.projectileDistance = distance;
   }    
 }
 
-qboolean GymCheckIfIsVisibleCL(float source[3], float dest[3]){
+int
+GymCheckIfIsVisibleCL(float source[3], float dest[3]){
   //Given variables
   vec3_t source_vec;
   vec3_t dest_vec;
@@ -188,12 +208,12 @@ qboolean GymCheckIfIsVisibleCL(float source[3], float dest[3]){
   trace = CM_BoxTrace(source_vec, dest_vec, vec3_origin, vec3_origin, 0, MASK_OPAQUE);
   if (trace.fraction == 1.0)
     {
-      return true;
+      return 1;
     }
-  return false;
+  return 0;
 }
 
-qboolean
+int
 GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]){
   //Given variables
   vec3_t source_vec;
@@ -225,10 +245,10 @@ GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]){
 
   if (dot > 0.3)
     {
-      return true;
+      return 1;
     }
 
-  return false;
+  return 0;
 }
 
 float
@@ -249,19 +269,15 @@ GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state)
 
   char buf[10000];
   entity_t *entity;
-  message_t *message;
   float prior = 99999.0;
 
-  GymCapturePlayerStateCL(refdef, state, message);
-  for (int i = 0; i < refdef.num_entities; i++)
-    {
-      entity = &refdef.entities[i];
-      GymCaptureEntityStateCL(refdef, entity, prior, message);
-    }
+  GymCapturePlayerStateCL(refdef, state);
+  for (int i = 0; i < refdef.num_entities; i++){
+    entity = &refdef.entities[i];
+    GymCaptureEntityStateCL(refdef, entity, prior);
+  }
 
-  PriorMessage = message;
-  GymMessageToBuffer(message, buf);
- 
+  GymMessageToBuffer(Message, buf);
 }
 
 void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
@@ -277,32 +293,33 @@ void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
   char buf[10000];
   vec3_t source;
   vec3_t dest;
-  source[0] = PriorMessage->playerPositionX;
-  source[1] = PriorMessage->playerPositionY;
-  source[2] = PriorMessage->playerPositionZ;
+  GymStartServer();
+  source[0] = Message.playerPositionX;
+  source[1] = Message.playerPositionY;
+  source[2] = Message.playerPositionZ;
   dest[0] = ch->origin[0];
   dest[1] = ch->origin[1];
   dest[2] = ch->origin[2];
-  PriorMessage->enemySoundDistance = GymCheckDistanceTo(source, dest);
-  GymMessageToBuffer(PriorMessage, buf);
+  Message.enemySoundDistance = GymCheckDistanceTo(source, dest);
+  GymMessageToBuffer(Message, buf);
 }
 
-void GymMessageToBuffer(message_t *message, char buf[10000])
+void GymMessageToBuffer(message_t message, char buf[10000])
 {
   sprintf(buf, "%f,%f,%f,%f,%f,%f,%d,%d,%d,%f,%f,%f,%f,%f",
-	  message->playerPositionX,
-	  message->playerPositionY,
-	  message->playerPositionZ,
-	  message->playerViewAngleX,
-	  message->playerViewAngleY,
-	  message->playerViewAngleZ,
-	  message->time,
-	  message->frags,
-	  message->enemyLooking,
-	  message->enemySoundDistance,
-	  message->enemyPositionX,
-	  message->enemyPositionY,
-	  message->enemyPositionZ,
-	  message->projectileDistance);
+	  message.playerPositionX,
+	  message.playerPositionY,
+	  message.playerPositionZ,
+	  message.playerViewAngleX,
+	  message.playerViewAngleY,
+	  message.playerViewAngleZ,
+	  message.time,
+	  message.frags,
+	  message.enemyLooking,
+	  message.enemySoundDistance,
+	  message.enemyPositionX,
+	  message.enemyPositionY,
+	  message.enemyPositionZ,
+	  message.projectileDistance);
   write(conncl, buf, strlen(buf));
 }
