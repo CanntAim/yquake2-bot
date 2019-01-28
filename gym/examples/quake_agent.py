@@ -10,16 +10,17 @@ class Agent(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--socket", help="path to UNIX socket.", default="")
-    parser.add_argument("--episodes", help="number of episodes to run.", default="")
+    parser.add_argument("--socket", help="path to UNIX socket.", default="../../quake_socket")
+    parser.add_argument("--path", help="path to where quake 2 is.", default="../../release")
+    parser.add_argument("--episodes", help="number of episodes.", default="10")
     args = parser.parse_args()
 
-    env = q2.DuelEnv(args.socket, args.path)
+    env = q2.DuelEnv(args.socket, args.path, 0, 0, True, 0, 0, 0)
     env.seed(123)
     agent = Agent(env.action_space)
 
     episode = 0
-    while episode < args.episodes:
+    while episode < int(args.episodes):
         obs = env.reset()
         done = False
         while not done:

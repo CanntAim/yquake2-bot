@@ -6,14 +6,13 @@ import sys
 class Connector:
     def __init__(self, address, path):
         subprocess.Popen("./quake2", cwd=path)
-        time.sleep(5)
+        time.sleep(10)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         print("connecting to %s" % address, file=sys.stderr)
         try:
             self.sock.connect(address)
         except socket.error as msg:
             print(msg, file=sys.stderr)
-
 
     def send(self, message):
         try:
@@ -31,19 +30,19 @@ class Connector:
     def start(self):
         errored = False
         started = False
-        send(self, "start server")
+        self.send("start server")
         while not started and not errored:
-            if "error" == received(50, ",")[0]:
+            if "error" == self.receive(50, ",")[0]:
                 errored = True
             elif "successfully started server":
                 started = True
 
-    def connect(address, port):
+    def connect(self, address, port):
         errored = False
         connected = False
-        send(self, "connect to server")
+        self.send("connect to server")
         while not connected and not errored:
-            if "error" == received(50, ",")[0]:
+            if "error" == self.receive(50, ",")[0]:
                 errored = True
             elif "successfully connected to server" == received(50, ","):
                 connected = True

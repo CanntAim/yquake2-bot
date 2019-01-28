@@ -42,5 +42,25 @@ class Quake2Env(gym.Env):
 
         return observations, reward, done, info
 
+    def _action_space(self):
+        """Returns a space object"""
+        raise NotImplementedError
+
+    def _observation_space(self):
+        """Returns a space object"""
+        raise NotImplementedError
+
+    def _compute_reward(self, observations):
+        """Returns a reward value"""
+        raise NotImplementedError
+
+    def _check_done(self):
+        """Return whether done flag"""
+        raise NotImplementedError
+
+    def __get_info(self):
+        """Return statistics data"""
+        raise NotImplementedError
+
     def _reset(self):
         pass
