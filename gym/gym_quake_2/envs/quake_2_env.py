@@ -31,6 +31,9 @@ class Quake2Env(gym.Env):
         else:
             # Connect to server
             self.connector.connect(address, port)
+
+    def _command(self, action):
+        return "test"
         
     def _step(self, action):
         self.steps += 1
@@ -52,15 +55,16 @@ class Quake2Env(gym.Env):
 
     def _compute_reward(self, observations):
         """Returns a reward value"""
-        raise NotImplementedError
+        print(observations)
+        return 1 
 
     def _check_done(self):
         """Return whether done flag"""
-        raise NotImplementedError
+        return False
 
-    def __get_info(self):
+    def _get_info(self):
         """Return statistics data"""
-        raise NotImplementedError
+        return "test"
 
     def _reset(self):
-        pass
+        self.connector.start()

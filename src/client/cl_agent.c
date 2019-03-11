@@ -58,6 +58,32 @@ GymInitializeMessage(){
 }
 
 void
+GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float fraglimit,
+	    float maxclients, char hostname[1024])
+{    
+    Cvar_SetValue("maxclients", maxclients);
+    Cvar_SetValue("timelimit", timelimit);
+    Cvar_SetValue("fraglimit", fraglimit);
+    Cvar_Set("hostname", hostname);
+
+    Cvar_SetValue("deathmatch", 1); /* deathmatch is always true for rogue games */
+
+    if (Com_ServerState())
+    {
+        Cbuf_AddText("disconnect\n");
+    }
+
+    Cbuf_AddText(va("map %s\n", startmap));
+}
+
+void
+GymJoinGameServer(char address[20]) {
+  char buffer[128];
+  Com_sprintf(buffer, sizeof(buffer), "connect %s\n", address);
+  Cbuf_AddText(buffer);
+}
+
+void
 GymOpenSocket(){
   struct sockaddr_un addr;
   char *socket_path = "../quake_socket";
@@ -91,6 +117,16 @@ GymOpenSocket(){
 
     while ((connrc = read(conncl, buf, sizeof(buf))) > 0) {
       printf("read %u bytes: %.*s\n", connrc, connrc, buf);
+      char *purpose = strtok(buf, ",");
+      char *address = strtok(NULL,",");
+
+      if (strcmp("start server", purpose) == 0) {
+        GymStartGameServerAndSetRules("q2dm1", 10.0, 0.0, 2.0, "localhost");
+        sprintf(buf, "successfully started server");
+        write(conncl, buf, strlen(buf));
+      } else if (strcmp("connect to server", purpose) == 0) {
+        GymJoinGameServer(address);
+      }
     }
 
     if (connrc == -1) {
@@ -104,6 +140,7 @@ GymOpenSocket(){
     }
   }
 }
+
 
 void
 GymStartServer(){

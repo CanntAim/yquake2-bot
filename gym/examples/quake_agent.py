@@ -17,15 +17,15 @@ if __name__ == '__main__':
 
     env = q2.DuelEnv(args.socket, args.path, 0, 0, True, 0, 0, 0)
     env.seed(123)
-    agent = Agent(env.action_space)
+    agent = Agent(env._action_space())
 
     episode = 0
     while episode < int(args.episodes):
-        obs = env.reset()
+        obs = env._reset()
         done = False
         while not done:
             action = agent.act()
-            obs, reward, done, info = env.step(action)
+            obs, reward, done, info = env._step(action)
         episode += 1
 
     env.close()

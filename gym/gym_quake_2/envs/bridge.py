@@ -2,10 +2,13 @@ import subprocess
 import socket
 import time
 import sys
+import os
 
 class Connector:
     def __init__(self, address, path):
-        subprocess.Popen("./quake2", cwd=path)
+        os.remove("quake.log")
+        subprocess.Popen("./quake2", cwd=path, stdout=open( 'quake.log', 'w'))
+        print("Waiting 10 seconds for game to start before opening socket connection.")
         time.sleep(10)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         print("connecting to %s" % address, file=sys.stderr)
@@ -34,15 +37,19 @@ class Connector:
         while not started and not errored:
             if "error" == self.receive(50, ",")[0]:
                 errored = True
-            elif "successfully started server":
+                print("obtained server failure notice")
+            else:
                 started = True
+                print("acknowledged server started")
 
     def connect(self, address, port):
         errored = False
         connected = False
-        self.send("connect to server")
+        self.send("connect to server, {}:{}".format(address, port))
         while not connected and not errored:
             if "error" == self.receive(50, ",")[0]:
                 errored = True
-            elif "successfully connected to server" == received(50, ","):
+                print("obtained server failure notice")
+            else:
                 connected = True
+                print("acknowledge connected to server")
