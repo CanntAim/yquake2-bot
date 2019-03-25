@@ -7,13 +7,12 @@ import gym_quake_2.envs.bridge as bridge
 class Quake2Env(gym.Env):    
 
     def __init__(self, socket, path, address, port, is_server, \
-                 timescale, delimiter, size):
+                 timescale):
         # Global variables
         self.frags = 0
         self.address = address
+        self.port = port
         self.timescale = timescale
-        self.delimiter = delimiter
-        self.size = size
         
         self.episodes = 0
         self.steps = 0
@@ -67,4 +66,7 @@ class Quake2Env(gym.Env):
         return "test"
 
     def _reset(self):
-        self.connector.start()
+        if self.address is None and self.port is None:
+            self.connector.start()
+        else:
+            self.connector.connect(self.address, self.port)

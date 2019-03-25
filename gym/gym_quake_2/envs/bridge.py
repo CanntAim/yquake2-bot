@@ -33,7 +33,7 @@ class Connector:
     def start(self):
         errored = False
         started = False
-        self.send("start server")
+        self.send("start server, localhost")
         while not started and not errored:
             if "error" == self.receive(50, ",")[0]:
                 errored = True

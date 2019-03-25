@@ -121,11 +121,13 @@ GymOpenSocket(){
       char *address = strtok(NULL,",");
 
       if (strcmp("start server", purpose) == 0) {
-        GymStartGameServerAndSetRules("q2dm1", 10.0, 0.0, 2.0, "localhost");
+        GymStartGameServerAndSetRules("q2dm1", 10.0, 0.0, 2.0, address);
         sprintf(buf, "successfully started server");
         write(conncl, buf, strlen(buf));
       } else if (strcmp("connect to server", purpose) == 0) {
         GymJoinGameServer(address);
+	sprintf(buf, "successfully joined server");
+        write(conncl, buf, strlen(buf));
       }
     }
 

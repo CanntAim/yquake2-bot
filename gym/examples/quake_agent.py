@@ -12,10 +12,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--socket", help="path to UNIX socket.", default="../../quake_socket")
     parser.add_argument("--path", help="path to where quake 2 is.", default="../../release")
+    parser.add_argument("--host", help="whether this client is host or not.", default="true")
+    parser.add_argument("--address", help="address of server to connect to.", default="")
+    parser.add_argument("--port", help="port of server to connect to.", default="")
     parser.add_argument("--episodes", help="number of episodes.", default="10")
     args = parser.parse_args()
-
-    env = q2.DuelEnv(args.socket, args.path, 0, 0, True, 0, 0, 0)
+    env = None
+    if args.host == "true":
+        env = q2.DuelEnv(args.socket, args.path, None, None, True, 0)
+    else:
+        env = q2.DuelEnv(args.socket, args.path, args.address, args.port, False, 0)
     env.seed(123)
     agent = Agent(env._action_space())
 
