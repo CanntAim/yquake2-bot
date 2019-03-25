@@ -26,6 +26,7 @@
 
 #include "header/client.h"
 
+qboolean Ready = false;
 qboolean OpenSocket = false;
 qboolean SilentSoundCapture = true;
 qboolean SilentPlayerStateCapture = true;
@@ -84,6 +85,16 @@ GymJoinGameServer(char address[20]) {
 }
 
 void
+GymStartServer(){
+  if(!OpenSocket){
+    pthread_t thread;
+    pthread_create(&thread, NULL, GymOpenSocket, NULL);
+    GymInitializeMessage();
+    OpenSocket = true;
+  }
+}
+
+void
 GymOpenSocket(){
   struct sockaddr_un addr;
   char *socket_path = "../quake_socket";
@@ -117,17 +128,22 @@ GymOpenSocket(){
 
     while ((connrc = read(conncl, buf, sizeof(buf))) > 0) {
       printf("read %u bytes: %.*s\n", connrc, connrc, buf);
-      char *purpose = strtok(buf, ",");
-      char *address = strtok(NULL,",");
 
-      if (strcmp("start server", purpose) == 0) {
-        GymStartGameServerAndSetRules("q2dm1", 10.0, 0.0, 2.0, address);
-        sprintf(buf, "successfully started server");
-        write(conncl, buf, strlen(buf));
-      } else if (strcmp("connect to server", purpose) == 0) {
-        GymJoinGameServer(address);
-	sprintf(buf, "successfully joined server");
-        write(conncl, buf, strlen(buf));
+      if(!Ready){
+	char *purpose = strtok(buf, ",");
+	char *address = strtok(NULL,",");
+
+	if (strcmp("start server", purpose) == 0) {
+	  GymStartGameServerAndSetRules("q2dm1", 10.0, 0.0, 2.0, address);
+	  sprintf(buf, "successfully started server");
+	  write(conncl, buf, strlen(buf));
+	  Ready = true;
+	} else if (strcmp("connect to server", purpose) == 0) {
+	  GymJoinGameServer(address);
+	  sprintf(buf, "successfully joined server");
+	  write(conncl, buf, strlen(buf));
+	  Ready = true;
+	}
       }
     }
 
@@ -140,17 +156,6 @@ GymOpenSocket(){
       printf("EOF\n");
       close(conncl);
     }
-  }
-}
-
-
-void
-GymStartServer(){
-  if(!OpenSocket){
-    pthread_t thread;
-    pthread_create(&thread, NULL, GymOpenSocket, NULL);
-    GymInitializeMessage();
-    OpenSocket = true;
   }
 }
 
