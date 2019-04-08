@@ -224,7 +224,7 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
   char *player = "dmspot";
   char *rocket = "rocket";
   char *grenade = "grenade";
-  if(strstr(entity->model, player) != NULL && front && visible) {
+  if(strstr(&entity->model, player) != NULL && front && visible) {
     Message.enemyLooking = looking;
     Message.enemyPositionX = entity->origin[0];
     Message.enemyPositionY = entity->origin[1];
