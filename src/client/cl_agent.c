@@ -94,8 +94,8 @@ GymStartServer(){
   }
 }
 
-void
-GymOpenSocket(){
+void*
+GymOpenSocket(void *args){
   struct sockaddr_un addr;
   char *socket_path = "../quake_socket";
   char buf[500];
@@ -212,7 +212,7 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
 				      entity->origin);
   
   if(!SilentEntityCapture){
-    printf("drawing entity: %s ...x: %f ...y: %f ...z: %f\n", entity->model,
+    printf("drawing entity: %s ...x: %f ...y: %f ...z: %f\n", (char*)entity->model,
 	   entity->origin[0],
 	   entity->origin[1],
 	   entity->origin[2]);
@@ -221,16 +221,17 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
     printf("Entity looking at player: %d\n", looking);
   }
 
-  char *player = "dmspot";
-  char *rocket = "rocket";
-  char *grenade = "grenade";
-  if(strstr(&entity->model, player) != NULL && front && visible) {
+  const char *actual = &entity->model;
+  const char *player = "dmspot";
+  const char *rocket = "rocket";
+  const char *grenade = "grenade";
+  if(strstr(actual, player) != NULL && front && visible) {
     Message.enemyLooking = looking;
     Message.enemyPositionX = entity->origin[0];
     Message.enemyPositionY = entity->origin[1];
     Message.enemyPositionZ = entity->origin[2];
-  } else if(strstr(&entity->model, rocket) != NULL
-	    || strstr(&entity->model, grenade) != NULL
+  } else if((strstr(actual, rocket) != NULL
+	     || strstr(actual, grenade) != NULL)
 	    && distance < Message.projectileDistance) {
     Message.projectileDistance = distance;
   }    
