@@ -28,9 +28,9 @@
 
 qboolean Ready = false;
 qboolean OpenSocket = false;
-qboolean SilentSoundCapture = true;
-qboolean SilentPlayerStateCapture = true;
-qboolean SilentEntityCapture = true;
+qboolean SilentSoundCapture = false;
+qboolean SilentPlayerStateCapture = false;
+qboolean SilentEntityCapture = false;
 message_t Message;
 
 int connfd, conncl, connrc;
@@ -100,7 +100,7 @@ GymOpenSocket(void *args){
   char *socket_path = "../quake_socket";
   char buf[500];
   
-  if ( (connfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+  if ((connfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
     perror("socket error");
     exit(-1);
   }
@@ -128,7 +128,6 @@ GymOpenSocket(void *args){
 
     while ((connrc = read(conncl, buf, sizeof(buf))) > 0) {
       printf("read %u bytes: %.*s\n", connrc, connrc, buf);
-
       if(!Ready){
 	char *purpose = strtok(buf, ",");
 	char *address = strtok(NULL,",");
@@ -143,6 +142,24 @@ GymOpenSocket(void *args){
 	  sprintf(buf, "successfully joined server");
 	  write(conncl, buf, strlen(buf));
 	  Ready = true;
+	}
+      } else {
+	char *command = strtok(buf, ".");
+	
+	if(strcmp("attackup", command) == 0) {
+	  IN_AttackUp();
+	} else if (strcmp("forwardup", command) == 0) {
+	  IN_ForwardUp();
+	} else if (strcmp("forwarddown", command) == 0) {
+	  IN_ForwardDown();
+        } else if(strcmp("attackdown", command) == 0) {
+	  IN_AttackDown();
+	} else if (strcmp("attackup", command) == 0) {
+	  IN_AttackUp();
+        } else if (strcmp("backup", command) == 0) {
+	  IN_BackUp();
+	} else if (strcmp("backdown", command) == 0) {
+	  IN_BackDown();
 	}
       }
     }
@@ -221,7 +238,7 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
     printf("Entity looking at player: %d\n", looking);
   }
 
-  const char *actual = &entity->model;
+  const char *actual = (char*)entity->model;
   const char *player = "dmspot";
   const char *rocket = "rocket";
   const char *grenade = "grenade";

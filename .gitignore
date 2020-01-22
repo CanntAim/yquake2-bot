@@ -1,5 +1,11 @@
+# c
 /build/
 /release/
 *.mk
 *.user
 *.d
+
+# emacs
+*~
+
+# python

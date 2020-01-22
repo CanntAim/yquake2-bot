@@ -1,4 +1,5 @@
 import socket
+import random
 import sys
 import gym
 
@@ -36,7 +37,10 @@ class Quake2Env(gym.Env):
         
     def _step(self, action):
         self.steps += 1
-        self.connector.send(self._command(action))
+        actions = ["attackup.", "forwardup.", \
+                   "forwarddown.", "attackdown.", \
+                   "backdown.", "backup."]
+        self.connector.send(random.choice(actions))
         observations = self.connector.receive(10000, ",")
         reward = self._compute_reward(observations)
         done = self._check_done()
