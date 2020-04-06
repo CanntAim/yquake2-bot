@@ -30,10 +30,10 @@ class Connector:
         data = message.decode("utf-8").split(delimiter)
         return data
 
-    def start(self):
+    def start(self, address, level):
         errored = False
         started = False
-        self.send("start server, localhost")
+        self.send("start server, {}, {}".format(level, address))
         while not started and not errored:
             if "error" == self.receive(50, ",")[0]:
                 errored = True
@@ -45,7 +45,7 @@ class Connector:
     def connect(self, address, port):
         errored = False
         connected = False
-        self.send("connect to server, {}:{}".format(address, port))
+        self.send("connect to server, blank, {}:{}".format(address, port))
         while not connected and not errored:
             if "error" == self.receive(50, ",")[0]:
                 errored = True

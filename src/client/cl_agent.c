@@ -61,7 +61,7 @@ GymInitializeMessage(){
 void
 GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float fraglimit,
 	    float maxclients, char hostname[1024])
-{    
+{
     Cvar_SetValue("maxclients", maxclients);
     Cvar_SetValue("timelimit", timelimit);
     Cvar_SetValue("fraglimit", fraglimit);
@@ -75,6 +75,7 @@ GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float fragli
     }
 
     Cbuf_AddText(va("map %s\n", startmap));
+    Cbuf_AddText("timescale 100\n");
 }
 
 void
@@ -130,10 +131,11 @@ GymOpenSocket(void *args){
       printf("read %u bytes: %.*s\n", connrc, connrc, buf);
       if(!Ready){
 	char *purpose = strtok(buf, ",");
-	char *address = strtok(NULL,",");
+	char *map = strtok(NULL, ",");
+	char *address = strtok(NULL, ",");
 
 	if (strcmp("start server", purpose) == 0) {
-	  GymStartGameServerAndSetRules("q2dm1", 10.0, 0.0, 2.0, address);
+	  GymStartGameServerAndSetRules(map, 10.0, 0.0, 2.0, address);
 	  sprintf(buf, "successfully started server");
 	  write(conncl, buf, strlen(buf));
 	  Ready = true;
