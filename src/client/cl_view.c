@@ -603,7 +603,7 @@ V_RenderView(float stereo_separation)
 	cl.refdef.fov_y = CalcFov(cl.refdef.fov_x, (float)cl.refdef.width,
 				(float)cl.refdef.height);
 
-	R_RenderFrame(&cl.refdef);
+	//	R_RenderFrame(&cl.refdef);
 
 	if (cl_stats->value)
 	{
@@ -621,7 +621,7 @@ V_RenderView(float stereo_separation)
 	SCR_AddDirtyPoint(scr_vrect.x + scr_vrect.width - 1,
 			scr_vrect.y + scr_vrect.height - 1);
 
-	SCR_DrawCrosshair();
+	//	SCR_DrawCrosshair();
 
 	GymCaptureCurrentPlayerViewStateCL(cl.refdef, cl.frame.playerstate);
 }

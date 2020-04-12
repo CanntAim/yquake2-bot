@@ -866,7 +866,7 @@ CL_Init(void)
 	}
 
 	/* all archived variables will now be loaded */
-	Con_Init();
+      	Con_Init();
 
 	S_Init();
 
