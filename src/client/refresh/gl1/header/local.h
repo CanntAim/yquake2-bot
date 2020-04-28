@@ -119,7 +119,6 @@ typedef enum
 {
 	rserr_ok,
 
-	rserr_invalid_fullscreen,
 	rserr_invalid_mode,
 
 	rserr_unknown
@@ -187,6 +186,7 @@ extern cvar_t *gl1_particle_size;
 extern cvar_t *gl1_particle_att_a;
 extern cvar_t *gl1_particle_att_b;
 extern cvar_t *gl1_particle_att_c;
+extern cvar_t *gl1_particle_square;
 
 extern cvar_t *r_mode;
 extern cvar_t *r_customwidth;
@@ -282,9 +282,6 @@ void R_SwapBuffers(int);
 
 int Draw_GetPalette(void);
 
-void R_ResampleTexture(unsigned *in, int inwidth, int inheight,
-		unsigned *out, int outwidth, int outheight);
-
 image_t *R_LoadPic(char *name, byte *pic, int width, int realwidth,
 		int height, int realheight, imagetype_t type, int bits);
 image_t *R_FindImage(char *name, imagetype_t type);
@@ -351,11 +348,7 @@ typedef struct
 	float camera_separation;
 	enum stereo_modes stereo_mode;
 
-	qboolean hwgamma;
-
-	unsigned char originalRedGammaTable[256];
-	unsigned char originalGreenGammaTable[256];
-	unsigned char originalBlueGammaTable[256];
+	qboolean stencil;
 } glstate_t;
 
 typedef struct
@@ -376,15 +369,24 @@ extern glconfig_t gl_config;
 extern glstate_t gl_state;
 
 /*
- * Shuts the render context and SDL window down
- * (if contextOnly, the window will not be shutdown)
+ * Updates the gamma ramp.
  */
-void RI_ShutdownWindow(qboolean contextOnly);
+void RI_UpdateGamma(void);
+
+/*
+ * Enables or disabes the vsync.
+ */
+void RI_SetVsync(void);
+
+/*
+ * Shuts the GL context down.
+ */
+void RI_ShutdownContext(void);
 
 /*
  * Returns the address of the GL function proc,
  * or NULL if the function is not found.
  */
-void *GLimp_GetProcAddress (const char* proc);
+void *RI_GetProcAddress (const char* proc);
 
 #endif

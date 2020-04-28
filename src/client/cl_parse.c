@@ -25,7 +25,7 @@
  */
 
 #include "header/client.h"
-#include "../backends/generic/header/input.h"
+#include "input/header/input.h"
 
 void CL_DownloadFileName(char *dest, int destlen, char *fn);
 void CL_ParseDownload(void);
@@ -798,6 +798,16 @@ CL_ParseFrame(void)
 			}
 
 			cl.sound_prepped = true;
+
+			if (paused_at_load)
+			{
+				if (cl_loadpaused->value == 1)
+				{
+					Cvar_Set("paused", "0");
+				}
+
+				paused_at_load = false;
+			}
 		}
 
 		/* fire entity events */
@@ -849,7 +859,7 @@ CL_ParseServerData(void)
 	/* set gamedir */
 	if ((*str && (!fs_gamedirvar->string || !*fs_gamedirvar->string ||
 		  strcmp(fs_gamedirvar->string, str))) ||
-		(!*str && (fs_gamedirvar->string || *fs_gamedirvar->string)))
+		(!*str && (fs_gamedirvar->string && !*fs_gamedirvar->string)))
 	{
 		Cvar_Set("game", str);
 	}
@@ -1078,20 +1088,11 @@ CL_ParseConfigString(void)
 	{
 		CL_SetLightstyle(i - CS_LIGHTS);
 	}
-
 	else if (i == CS_CDTRACK)
 	{
 		if (cl.refresh_prepped)
 		{
-			int track = (int)strtol(cl.configstrings[CS_CDTRACK], (char **)NULL, 10);
-#ifdef CDA
-			CDAudio_Play(track, true);
-#endif
-
-#ifdef OGG
-
-			OGG_PlayTrack(track);
-#endif
+			OGG_PlayTrack((int)strtol(cl.configstrings[CS_CDTRACK], (char **)NULL, 10));
 		}
 	}
 	else if ((i >= CS_MODELS) && (i < CS_MODELS + MAX_MODELS))

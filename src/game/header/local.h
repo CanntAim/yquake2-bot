@@ -108,6 +108,10 @@ typedef enum
 	AMMO_SLUGS
 } ammo_t;
 
+/* Maximum debris / gibs per frame */
+#define MAX_GIBS 20
+#define MAX_DEBRIS 20
+
 /* deadflag */
 #define DEAD_NO 0
 #define DEAD_DYING 1
@@ -441,8 +445,8 @@ extern spawn_temp_t st;
 extern int sm_meat_index;
 extern int snd_fry;
 
+extern int debristhisframe;
 extern int gibsthisframe;
-extern int lastgibframe;
 
 /* means of death */
 #define MOD_UNKNOWN 0
@@ -480,6 +484,12 @@ extern int lastgibframe;
 #define MOD_HIT 32
 #define MOD_TARGET_BLASTER 33
 #define MOD_FRIENDLY_FIRE 0x8000000
+
+/* Easier handling of AI skill levels */
+#define SKILL_EASY 0
+#define SKILL_MEDIUM 1
+#define SKILL_HARD 2
+#define SKILL_HARDPLUS 3
 
 extern int meansOfDeath;
 
@@ -569,6 +579,7 @@ typedef struct
 	int ofs;
 	fieldtype_t type;
 	int flags;
+	short save_ver;
 } field_t;
 
 extern field_t fields[];
@@ -1010,15 +1021,15 @@ struct edict_s
 	float touch_debounce_time;
 	float pain_debounce_time;
 	float damage_debounce_time;
-	float fly_sound_debounce_time;
+	float fly_sound_debounce_time;	/* now also used by insane marines to store pain sound timeout */
 	float last_move_time;
 
 	int health;
 	int max_health;
 	int gib_health;
 	int deadflag;
-	int show_hostile;
 
+	float show_hostile;
 	float powerarmor_time;
 
 	char *map; /* target_changelevel */

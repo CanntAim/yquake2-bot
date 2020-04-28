@@ -567,12 +567,8 @@ SCR_BeginLoadingPlaque(void)
 {
 	S_StopAllSounds();
 	cl.sound_prepped = false; /* don't play ambients */
-#ifdef CDA
-	CDAudio_Stop();
-#endif
-#ifdef OGG
+
 	OGG_Stop();
-#endif
 
 	if (cls.disable_screen)
 	{
@@ -1108,7 +1104,7 @@ SCR_ExecuteLayoutString(char *s)
 				Com_Error(ERR_DROP, "Pic >= MAX_IMAGES");
 			}
 
-			if (cl.configstrings[CS_IMAGES + value])
+			if (cl.configstrings[CS_IMAGES + value][0] != '\0')
 			{
 				SCR_AddDirtyPoint(x, y);
 				SCR_AddDirtyPoint(x + 23*scale, y + 23*scale);
@@ -1446,6 +1442,7 @@ SCR_Framecounter(void) {
 		char str[10];
 		snprintf(str, sizeof(str), "%3.2ffps", (1000.0 * 1000.0) / (avg / num));
 		DrawStringScaled(viddef.width - scale*(strlen(str)*8 + 2), 0, str, scale);
+		GymDisplayFPS((1000.0 * 1000.0) / (avg / num));
 	} else if (cl_showfps->value >= 2) {
 		// Calculate average of frames.
 		int avg = 0;

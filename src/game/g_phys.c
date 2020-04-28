@@ -535,6 +535,22 @@ retry:
 	VectorCopy(trace.endpos, ent->s.origin);
 	gi.linkentity(ent);
 
+	/* Push slightly away from non-horizontal surfaces,
+	   prevent origin stuck in the plane which causes
+	   the entity to be rendered in full black. */
+	if (trace.plane.type != 2)
+	{
+		/* Limit the fix to gibs, debris and dead monsters.
+		   Everything else may break existing maps. Items
+		   may slide to unreachable locations, monsters may
+		   get stuck, etc. */
+		if (((strncmp(ent->classname, "monster_", 8) == 0) && ent->health < 1) ||
+				(strcmp(ent->classname, "debris") == 0) || (ent->s.effects & EF_GIB))
+		{
+			VectorAdd(ent->s.origin, trace.plane.normal, ent->s.origin);
+		}
+	}
+
 	if (trace.fraction != 1.0)
 	{
 		SV_Impact(ent, &trace);
@@ -1077,6 +1093,8 @@ SV_Physics_Step(edict_t *ent)
 	float friction;
 	edict_t *groundentity;
 	int mask;
+	vec3_t oldorig;
+	trace_t tr;
 
 	if (!ent)
 	{
@@ -1202,7 +1220,23 @@ SV_Physics_Step(edict_t *ent)
 			mask = MASK_SOLID;
 		}
 
+		VectorCopy(ent->s.origin, oldorig);
 		SV_FlyMove(ent, FRAMETIME, mask);
+
+		/* Evil hack to work around dead parasites (and maybe other monster)
+		   falling through the worldmodel into the void. We copy the current
+		   origin (see above) and after the SV_FlyMove() was performend we
+		   checl if we're stuck in the world model. If yes we're undoing the
+		   move. */
+		if (!VectorCompare(ent->s.origin, oldorig))
+		{
+			tr = gi.trace(ent->s.origin, ent->mins, ent->maxs, ent->s.origin, ent, mask);
+
+			if (tr.startsolid)
+			{
+				VectorCopy(oldorig, ent->s.origin);
+			}
+		}
 
 		gi.linkentity(ent);
 		G_TouchTriggers(ent);

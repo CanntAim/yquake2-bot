@@ -43,13 +43,15 @@
 
 #include "../../common/header/common.h"
 #include "../../common/header/glob.h"
-#include "../generic/header/input.h"
 
 // Pointer to game library
 static void *game_library;
 
 // Evil hack to determine if stdin is available
 qboolean stdin_active = true;
+
+// Config dir
+char cfgdir[MAX_OSPATH] = CFGDIR;
 
 // Console logfile
 extern FILE	*logfile;
@@ -279,7 +281,7 @@ Sys_FindFirst(char *path, unsigned musthave, unsigned canhave)
 		{
 			if ((strcmp(d->d_name, ".") != 0) || (strcmp(d->d_name, "..") != 0))
 			{
-				sprintf(findpath, "%s/%s", findbase, d->d_name);
+				snprintf(findpath, sizeof(findpath), "%s/%s", findbase, d->d_name);
 				return findpath;
 			}
 		}
@@ -304,7 +306,7 @@ Sys_FindNext(unsigned musthave, unsigned canhave)
 		{
 			if ((strcmp(d->d_name, ".") != 0) || (strcmp(d->d_name, "..") != 0))
 			{
-				sprintf(findpath, "%s/%s", findbase, d->d_name);
+				snprintf(findpath, sizeof(findpath), "%s/%s", findbase, d->d_name);
 				return findpath;
 			}
 		}
@@ -350,9 +352,6 @@ Sys_GetGameAPI(void *parms)
 #else
 	const char *gamename = "game.so";
 #endif
-
-	setreuid(getuid(), getuid());
-	setegid(getgid());
 
 	if (game_library)
 	{
@@ -480,9 +479,41 @@ Sys_GetHomeDir(void)
 		return NULL;
 	}
 
-	snprintf(gdir, sizeof(gdir), "%s/%s/", home, CFGDIR);
+	snprintf(gdir, sizeof(gdir), "%s/%s/", home, cfgdir);
 
 	return gdir;
+}
+
+void
+Sys_Remove(const char *path)
+{
+	remove(path);
+}
+
+int
+Sys_Rename(const char *from, const char *to)
+{
+	return rename(from, to);
+}
+
+void
+Sys_RemoveDir(const char *path)
+{
+	char filepath[MAX_OSPATH];
+	DIR *directory = opendir(path);
+	struct dirent *file;
+
+	if (Sys_IsDir(path))
+	{
+		while ((file = readdir(directory)) != NULL)
+		{
+			snprintf(filepath, MAX_OSPATH, "%s/%s", path, file->d_name);
+			Sys_Remove(filepath);
+		}
+
+		closedir(directory);
+		Sys_Remove(path);
+	}
 }
 
 /* ================================================================ */

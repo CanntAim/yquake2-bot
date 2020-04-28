@@ -26,13 +26,6 @@ extern cvar_t	*sw_custom_particles;
 #define PARTICLE_66     1
 #define PARTICLE_OPAQUE 2
 
-typedef struct
-{
-	particle_t *particle;
-	int         level;
-	int         color;
-} partparms_t;
-
 /*
 ** R_DrawParticle
 **
@@ -46,16 +39,16 @@ typedef struct
 ** function pointer route.  This exacts some overhead, but
 ** it pays off in clean and easy to understand code.
 */
-static void R_DrawParticle(partparms_t *partparms)
+static void
+R_DrawParticle(particle_t *pparticle, int level)
 {
-	particle_t	*pparticle = partparms->particle;
-	int		level = partparms->level;
 	vec3_t		local, transformed;
 	float		zi;
 	byte		*pdest;
 	zvalue_t	*pz;
 	int		color = pparticle->color;
-	int		i, izi, pix, count, u, v;
+	int		i, pix, count, u, v;
+	zvalue_t	izi;
 	int 		custom_particle = (int)sw_custom_particles->value;
 
 	/*
@@ -90,8 +83,8 @@ static void R_DrawParticle(partparms_t *partparms)
 	** compute addresses of zbuffer, framebuffer, and
 	** compute the Z-buffer reference value.
 	*/
-	pz = d_pzbuffer + (d_zwidth * v) + u;
-	pdest = d_viewbuffer + r_screenwidth * v + u;
+	pz = d_pzbuffer + (vid.width * v) + u;
+	pdest = d_viewbuffer + vid.width * v + u;
 	izi = (int)(zi * 0x8000);
 
 	/*
@@ -108,12 +101,21 @@ static void R_DrawParticle(partparms_t *partparms)
 	** render the appropriate pixels
 	*/
 	count = pix;
+	if ((pz[(vid.width * count / 2) + (count / 2)]) > izi)
+	{
+		// looks like under some object
+		return;
+	}
+
+	// zbuffer particles damage
+	VID_DamageZBuffer(u, v);
+	VID_DamageZBuffer(u + count, v + count);
 
 	if (custom_particle == 0)
 	{
 		switch (level) {
 		case PARTICLE_33 :
-			for ( ; count ; count--, pz += d_zwidth, pdest += r_screenwidth)
+			for ( ; count ; count--, pz += vid.width, pdest += vid.width)
 			{
 				//FIXME--do it in blocks of 8?
 				for (i=0 ; i<pix ; i++)
@@ -130,7 +132,7 @@ static void R_DrawParticle(partparms_t *partparms)
 		case PARTICLE_66 :
 		{
 			int color_part = (color<<8);
-			for ( ; count ; count--, pz += d_zwidth, pdest += r_screenwidth)
+			for ( ; count ; count--, pz += vid.width, pdest += vid.width)
 			{
 				for (i=0 ; i<pix ; i++)
 				{
@@ -145,7 +147,7 @@ static void R_DrawParticle(partparms_t *partparms)
 		}
 
 		default:  //100
-			for ( ; count ; count--, pz += d_zwidth, pdest += r_screenwidth)
+			for ( ; count ; count--, pz += vid.width, pdest += vid.width)
 			{
 				for (i=0 ; i<pix ; i++)
 				{
@@ -167,7 +169,7 @@ static void R_DrawParticle(partparms_t *partparms)
 
 		switch (level) {
 		case PARTICLE_33 :
-			for ( ; count ; count--, pz += d_zwidth, pdest += r_screenwidth)
+			for ( ; count ; count--, pz += vid.width, pdest += vid.width)
 			{
 				//FIXME--do it in blocks of 8?
 				for (i=0 ; i<pix ; i++)
@@ -185,7 +187,7 @@ static void R_DrawParticle(partparms_t *partparms)
 		case PARTICLE_66 :
 		{
 			int color_part = (color<<8);
-			for ( ; count ; count--, pz += d_zwidth, pdest += r_screenwidth)
+			for ( ; count ; count--, pz += vid.width, pdest += vid.width)
 			{
 				for (i=0 ; i<pix ; i++)
 				{
@@ -201,7 +203,7 @@ static void R_DrawParticle(partparms_t *partparms)
 		}
 
 		default:  //100
-			for ( ; count ; count--, pz += d_zwidth, pdest += r_screenwidth)
+			for ( ; count ; count--, pz += vid.width, pdest += vid.width)
 			{
 				for (i=0 ; i<pix ; i++)
 				{
@@ -226,10 +228,9 @@ static void R_DrawParticle(partparms_t *partparms)
 ** if we're using the asm path, it simply assigns a function pointer
 ** and goes.
 */
-void R_DrawParticles (void)
+void
+R_DrawParticles (void)
 {
-	partparms_t partparms;
-
 	particle_t *p;
 	int         i;
 
@@ -239,17 +240,15 @@ void R_DrawParticles (void)
 
 	for (p=r_newrefdef.particles, i=0 ; i<r_newrefdef.num_particles ; i++,p++)
 	{
+		int level;
 
 		if ( p->alpha > 0.66 )
-			partparms.level = PARTICLE_OPAQUE;
+			level = PARTICLE_OPAQUE;
 		else if ( p->alpha > 0.33 )
-			partparms.level = PARTICLE_66;
+			level = PARTICLE_66;
 		else
-			partparms.level = PARTICLE_33;
+			level = PARTICLE_33;
 
-		partparms.particle = p;
-		partparms.color    = p->color;
-
-		R_DrawParticle(&partparms);
+		R_DrawParticle(p, level);
 	}
 }

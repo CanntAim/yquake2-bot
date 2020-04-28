@@ -196,8 +196,8 @@ Pickup_Powerup(edict_t *ent, edict_t *other)
 
 	quantity = other->client->pers.inventory[ITEM_INDEX(ent->item)];
 
-	if (((skill->value == 1) &&
-		 (quantity >= 2)) || ((skill->value >= 2) && (quantity >= 1)))
+	if (((skill->value == SKILL_MEDIUM) &&
+		 (quantity >= 2)) || ((skill->value >= SKILL_HARD) && (quantity >= 1)))
 	{
 		return false;
 	}
@@ -1301,13 +1301,13 @@ Drop_Item(edict_t *ent, gitem_t *item)
 	dropped->s.effects = item->world_model_flags;
 	dropped->s.renderfx = RF_GLOW;
 
-	if (randk() > 0.5)
+	if (frandk() > 0.5)
 	{
-		dropped->s.angles[1] += randk()*45;
+		dropped->s.angles[1] += frandk()*45;
 	}
 	else
 	{
-		dropped->s.angles[1] -= randk()*45;
+		dropped->s.angles[1] -= frandk()*45;
 	}
 
 	VectorSet (dropped->mins, -16, -16, -16);
@@ -1655,7 +1655,7 @@ SpawnItem(edict_t *ent, gitem_t *item)
 
 /* ====================================================================== */
 
-gitem_t itemlist[] = {
+static const gitem_t gameitemlist[] = {
 	{
 		NULL
 	}, /* leave index 0 alone */
@@ -2576,6 +2576,8 @@ gitem_t itemlist[] = {
 	{NULL}
 };
 
+gitem_t itemlist[MAX_ITEMS];
+
 /*
  * QUAKED item_health (.3 .3 1) (-16 -16 -16) (16 16 16)
  */
@@ -2673,7 +2675,9 @@ SP_item_health_mega(edict_t *self)
 void
 InitItems(void)
 {
-	game.num_items = sizeof(itemlist) / sizeof(itemlist[0]) - 1;
+	memset(itemlist, 0, sizeof(itemlist));
+	memcpy(itemlist, gameitemlist, sizeof(gameitemlist));
+	game.num_items = sizeof(gameitemlist) / sizeof(gameitemlist[0]) - 1;
 }
 
 /*

@@ -156,7 +156,7 @@ Sys_Error(char *error, ...)
 	char text[1024];
 
 	va_start(argptr, error);
-	vsprintf(text, error, argptr);
+	vsnprintf(text, sizeof(text), error, argptr);
 	va_end(argptr);
 
 	gi.error("%s", text);
@@ -169,7 +169,7 @@ Com_Printf(char *msg, ...)
 	char text[1024];
 
 	va_start(argptr, msg);
-	vsprintf(text, msg, argptr);
+	vsnprintf(text, sizeof(text), msg, argptr);
 	va_end(argptr);
 
 	gi.dprintf("%s", text);
@@ -398,14 +398,14 @@ ExitLevel(void)
 			continue;
 		}
 
-		if (ent->health > ent->client->pers.max_health)
+		if (ent->health > ent->max_health)
 		{
-			ent->health = ent->client->pers.max_health;
+			ent->health = ent->max_health;
 		}
 	}
 
+	debristhisframe = 0;
 	gibsthisframe = 0;
-	lastgibframe = 0;
 }
 
 /*
@@ -419,6 +419,9 @@ G_RunFrame(void)
 
 	level.framenum++;
 	level.time = level.framenum * FRAMETIME;
+
+	gibsthisframe = 0;
+	debristhisframe = 0;
 
 	/* choose a client for monsters to target this frame */
 	AI_SetSightClient();

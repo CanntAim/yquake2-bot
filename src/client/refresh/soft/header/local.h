@@ -31,7 +31,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <string.h>
 #include <stdarg.h>
 
-#define REF_VERSION	"SOFT 0.01"
+#define REF_VERSION	"Yamagi Quake II Software Refresher"
 
 // up / down
 #define PITCH	0
@@ -65,7 +65,7 @@ typedef struct image_s
 	int		width, height;
 	qboolean	transparent;		// true if any 255 pixels in image
 	int		registration_sequence;  // 0 = free
-	byte		*pixels[NUM_MIPS];		// mip levels
+	byte		*pixels[NUM_MIPS];	// mip levels
 } image_t;
 
 
@@ -74,6 +74,7 @@ typedef struct image_s
 typedef unsigned char pixel_t;
 typedef int	shift20_t;
 typedef int	zvalue_t;
+typedef unsigned int	light_t;
 
 // xyz-prescale to 16.16 fixed-point
 #define SHIFT16XYZ 16
@@ -138,7 +139,7 @@ extern oldrefdef_t	r_refdef;
 #define VID_GRADES	(1 << VID_CBITS)
 
 
-// r_shared.h: general refresh-related stuff shared between the refresh and the
+// sw_local.h: general refresh-related stuff shared between the refresh and the
 // driver
 
 
@@ -150,19 +151,7 @@ extern oldrefdef_t	r_refdef;
 
 #define TRANSPARENT_COLOR	0xFF
 
-#define TURB_TEX_SIZE		64 // base turbulent texture size
-
 #define CYCLE			128 // turbulent cycle size
-
-#define SCANBUFFERPAD		0x1000
-
-#define DS_SPAN_LIST_END	-128
-
-#define NUMSTACKEDGES		2000
-#define MINEDGES		NUMSTACKEDGES
-#define NUMSTACKSURFACES	1000
-#define MINSURFACES		NUMSTACKSURFACES
-#define MAXSPANS		3000
 
 // flags in finalvert_t.flags
 #define ALIAS_LEFT_CLIP		0x0001
@@ -180,20 +169,16 @@ extern oldrefdef_t	r_refdef;
 #define XCENTERING	(1.0 / 2.0)
 #define YCENTERING	(1.0 / 2.0)
 
-#define CLIP_EPSILON	0.001
-
 #define BACKFACE_EPSILON	0.01
 
 #define NEAR_CLIP	0.01
 
-
-#define MAXALIASVERTS		2000  // TODO: tune this
 #define ALIAS_Z_CLIP_PLANE	4
 
 // turbulence stuff
-#define AMP             8*0x10000
-#define AMP2    3
-#define SPEED   20
+#define AMP	8*0x10000
+#define AMP2	3
+#define SPEED	20
 
 
 /*
@@ -216,11 +201,11 @@ typedef struct
 ** listed after it!
 */
 typedef struct finalvert_s {
-	int             u, v, s, t;
-	int             l;
-	int             zi;
-	int             flags;
-	float   xyz[3];         // eye space
+	int		u, v, s, t;
+	int		l;
+	zvalue_t	zi;
+	int		flags;
+	float		xyz[3];         // eye space
 } finalvert_t;
 
 
@@ -287,7 +272,7 @@ typedef struct espan_s
 } espan_t;
 extern espan_t	*vid_polygon_spans; // space for spans in r_poly
 
-// used by the polygon drawer (R_POLY.C) and sprite setup code (R_SPRITE.C)
+// used by the polygon drawer (sw_poly.c) and sprite setup code (sw_sprite.c)
 typedef struct
 {
 	int	nump;
@@ -299,7 +284,7 @@ typedef struct
 	float	dist;
 	float	s_offset, t_offset;
 	float	viewer_position[3];
-	void	(*drawspanlet)(void);
+	void	(*drawspanlet)(const int *r_turb_turb);
 	int	stipple_parity;
 } polydesc_t;
 
@@ -317,21 +302,24 @@ typedef struct surf_s
 				   // -1 = in inverted span (end before
 				   //  start)
 	int		flags;	   // currentface flags
-	msurface_t      *msurf;
+	msurface_t	*msurf;
 	entity_t	*entity;
 	float		nearzi; // nearest 1/z on surface, for mipmapping
 	qboolean	insubmodel;
 	float		d_ziorigin, d_zistepu, d_zistepv;
-
-	int		pad[2]; // to 64 bytes
 } surf_t;
+
+typedef unsigned short	surfindex_t;
+
+// surface index size
+#define SURFINDEX_MAX	(1 << (sizeof(surfindex_t) * 8))
 
 typedef struct edge_s
 {
 	shift20_t	u;
 	shift20_t	u_step;
 	struct edge_s	*prev, *next;
-	unsigned short	surfs[2];
+	surfindex_t	surfs[2];
 	struct edge_s	*nextremove;
 	float		nearzi;
 	medge_t		*owner;
@@ -360,24 +348,22 @@ void R_PolysetUpdateTables(void);
 
 // callbacks to Quake
 
-extern drawsurf_t	r_drawsurf;
-
 extern int		c_surf;
 
 extern pixel_t		*r_warpbuffer;
 
 extern float		scale_for_mip;
 
-extern float	d_sdivzstepu, d_tdivzstepu, d_zistepu;
-extern float	d_sdivzstepv, d_tdivzstepv, d_zistepv;
-extern float	d_sdivzorigin, d_tdivzorigin, d_ziorigin;
+extern float	d_sdivzstepu, d_tdivzstepu;
+extern float	d_sdivzstepv, d_tdivzstepv;
+extern float	d_sdivzorigin, d_tdivzorigin;
 
-void D_DrawSpans16(espan_t *pspans);
-void D_DrawZSpans(espan_t *pspans);
-void Turbulent8(espan_t *pspan);
-void NonTurbulent8(espan_t *pspan); //PGM
+void D_DrawSpansPow2(espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv);
+void D_DrawZSpans(espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv);
+void TurbulentPow2(espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv);
+void NonTurbulentPow2(espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv);
 
-surfcache_t *D_CacheSurface (msurface_t *surface, int miplevel);
+surfcache_t *D_CacheSurface(const entity_t *currententity, msurface_t *surface, int miplevel);
 
 extern int	d_vrectx, d_vrecty, d_vrectright_particle, d_vrectbottom_particle;
 
@@ -385,7 +371,6 @@ extern int	d_pix_min, d_pix_max, d_pix_mul;
 
 extern pixel_t	*d_viewbuffer;
 extern zvalue_t	*d_pzbuffer;
-extern unsigned int d_zwidth;
 
 extern int	d_minmip;
 extern float	d_scalemip[NUM_MIPS-1];
@@ -394,25 +379,26 @@ extern float	d_scalemip[NUM_MIPS-1];
 
 extern int	cachewidth;
 extern pixel_t	*cacheblock;
-extern int	r_screenwidth;
 
 extern int	r_drawnpolycount;
 
 extern int	*sintable;
 extern int	*intsintable;
-extern int	*blanktable; // PGM
+extern int	*blanktable;
 
 extern vec3_t	vup, base_vup;
 extern vec3_t	vpn, base_vpn;
 extern vec3_t	vright, base_vright;
 
 extern surf_t	*surfaces, *surface_p, *surf_max;
+// allow some very large lightmaps
+extern light_t	*blocklights, *blocklight_max;
 
 // surfaces are generated in back to front order by the bsp, so if a surf
 // pointer is greater than another one, it should be drawn in front
 // surfaces[1] is the background, and is used as the active surface stack.
 // surfaces[0] is a dummy, because index 0 is used to indicate no surface
-//  attached to an edge_t
+// attached to an edge_t
 
 //===================================================================
 
@@ -458,8 +444,6 @@ extern mplane_t        screenedge[4];
 extern vec3_t  r_origin;
 
 extern entity_t	r_worldentity;
-extern model_t	*currentmodel;
-extern entity_t	 *currententity;
 extern vec3_t	modelorg;
 extern vec3_t	r_entorigin;
 
@@ -472,25 +456,22 @@ extern msurface_t	*r_alpha_surfaces;
 //
 // current entity info
 //
-extern  qboolean	insubmodel;
+void R_DrawAlphaSurfaces(const entity_t *currententity);
 
-void R_DrawAlphaSurfaces(void);
+void R_DrawSprite(entity_t *currententity, const model_t *currentmodel);
 
-void R_DrawSprite(void);
-
-void R_RenderFace(msurface_t *fa, int clipflags);
-void R_RenderBmodelFace(bedge_t *pedges, msurface_t *psurf);
+void R_RenderFace(entity_t *currententity, const model_t *currentmodel, msurface_t *fa, int clipflags, qboolean insubmodel);
+void R_RenderBmodelFace(entity_t *currententity, bedge_t *pedges, msurface_t *psurf, int r_currentbkey);
 void R_TransformFrustum(void);
 
-void R_DrawSubmodelPolygons(model_t *pmodel, int clipflags, mnode_t *topnode);
-void R_DrawSolidClippedSubmodelPolygons(model_t *pmodel, mnode_t *topnode);
+void R_DrawSubmodelPolygons(entity_t *currententity, const model_t *currentmodel, int clipflags, mnode_t *topnode);
+void R_DrawSolidClippedSubmodelPolygons(entity_t *currententity, const model_t *currentmodel, mnode_t *topnode);
 
-void R_AliasDrawModel(void);
+void R_AliasDrawModel(entity_t *currententity, const model_t *currentmodel);
 void R_BeginEdgeFrame(void);
-void R_ScanEdges(void);
-void R_PushDlights(model_t *model);
-
-extern void R_RotateBmodel (void);
+void R_ScanEdges(surf_t *surface);
+void R_PushDlights(const model_t *model);
+void R_RotateBmodel(const entity_t *currententity);
 
 extern int	c_faceclip;
 extern int	r_polycount;
@@ -499,12 +480,10 @@ extern int	sadjust, tadjust;
 extern int	bbextents, bbextentt;
 
 extern int	r_currentkey;
-extern int	r_currentbkey;
 
 void R_DrawParticles (void);
 
 extern int	r_amodels_drawn;
-extern edge_t	*auxedges;
 extern int	r_numallocatededges;
 extern edge_t	*r_edges, *edge_p, *edge_max;
 
@@ -512,47 +491,49 @@ extern edge_t	**newedges;
 extern edge_t	**removeedges;
 
 typedef struct {
-	pixel_t		*pdest;
-	zvalue_t	*pz;
-	int		count;
+	int		u, v, count;
 	pixel_t		*ptex;
-	int		sfrac, tfrac, light, zi;
+	int		sfrac, tfrac, light;
+	zvalue_t	zi;
 } spanpackage_t;
-extern spanpackage_t	*triangle_spans;
+extern spanpackage_t	*triangle_spans, *triangles_max;
+
+void R_PolysetDrawSpans8_33(const entity_t *currententity, spanpackage_t *pspanpackage);
+void R_PolysetDrawSpans8_66(const entity_t *currententity, spanpackage_t *pspanpackage);
+void R_PolysetDrawSpans8_Opaque(const entity_t *currententity, spanpackage_t *pspanpackage);
 
 extern byte	**warp_rowptr;
 extern int	*warp_column;
 extern espan_t	*edge_basespans;
-extern finalvert_t	*finalverts;
+extern espan_t	*max_span_p;
+extern int	r_numallocatedverts;
+extern int	r_numallocatededgebasespans;
+extern finalvert_t	*finalverts, *finalverts_max;
 
 extern	int	r_aliasblendcolor;
 
-extern float    aliasxscale, aliasyscale, aliasxcenter, aliasycenter;
+extern float	aliasxscale, aliasyscale, aliasxcenter, aliasycenter;
 
-extern int              r_outofsurfaces;
-extern int              r_outofedges;
+extern qboolean	r_outofsurfaces;
+extern qboolean	r_outofedges;
+extern qboolean	r_outofverts;
+extern qboolean	r_outoftriangles;
+extern qboolean	r_outoflights;
+extern qboolean	r_outedgebasespans;
 
-extern mvertex_t        *r_pcurrentvertbase;
+extern mvertex_t	*r_pcurrentvertbase;
 
-typedef struct
-{
-	finalvert_t *a, *b, *c;
-} aliastriangleparms_t;
-
-extern aliastriangleparms_t aliastriangleparms;
-
-void R_DrawTriangle( void );
-void R_AliasClipTriangle (finalvert_t *index0, finalvert_t *index1, finalvert_t *index2);
+void R_DrawTriangle(const entity_t *currententity, const finalvert_t *a, const finalvert_t *b, const finalvert_t *c);
+void R_AliasClipTriangle(const entity_t *currententity, const finalvert_t *index0, const finalvert_t *index1, finalvert_t *index2);
 
 
 extern float	r_time1;
 extern float	da_time1, da_time2;
 extern float	dp_time1, dp_time2, db_time1, db_time2, rw_time1, rw_time2;
-extern float	se_time1, se_time2, de_time1, de_time2, dv_time1, dv_time2;
+extern float	se_time1, se_time2, de_time1, de_time2;
 extern int r_viewcluster, r_oldviewcluster;
 
 extern int r_clipflags;
-extern int r_dlightframecount;
 
 extern image_t		 *r_notexture_mip;
 extern model_t		 *r_worldmodel;
@@ -560,7 +541,7 @@ extern model_t		 *r_worldmodel;
 void R_PrintAliasStats (void);
 void R_PrintTimes (void);
 void R_PrintDSpeeds (void);
-void R_LightPoint (vec3_t p, vec3_t color);
+void R_LightPoint (const entity_t *currententity, vec3_t p, vec3_t color);
 void R_SetupFrame (void);
 
 extern  refdef_t		r_newrefdef;
@@ -576,14 +557,14 @@ void Draw_InitLocal(void);
 void R_InitCaches(void);
 void D_FlushCaches(void);
 
-void	RE_BeginRegistration (char *map);
-struct model_s  *RE_RegisterModel (char *name);
+void	RE_BeginRegistration (char *model);
+struct model_s	*RE_RegisterModel (char *name);
 void	RE_EndRegistration (void);
 
 struct image_s	*RE_Draw_FindPic (char *name);
 
 void	RE_Draw_GetPicSize (int *w, int *h, char *name);
-void	RE_Draw_PicScaled (int x, int y, char *name, float factor);
+void	RE_Draw_PicScaled (int x, int y, char *name, float scale);
 void	RE_Draw_StretchPic (int x, int y, int w, int h, char *name);
 void	RE_Draw_StretchRaw (int x, int y, int w, int h, int cols, int rows, byte *data);
 void	RE_Draw_CharScaled (int x, int y, int c, float scale);
@@ -599,18 +580,15 @@ image_t	*R_FindImage(char *name, imagetype_t type);
 void	R_FreeUnusedImages(void);
 
 void R_InitSkyBox(void);
-
-typedef struct swstate_s
-{
-	qboolean	fullscreen;
-	int		prev_mode; // last valid SW mode
-
-	unsigned char	gammatable[256];
-	unsigned char	currentpalette[1024];
-
-} swstate_t;
-
 void R_IMFlatShadedQuad( vec3_t a, vec3_t b, vec3_t c, vec3_t d, int color, float alpha );
+
+// VID Buffer damage
+void VID_DamageBuffer(int u, int v);
+
+// VID zBuffer damage
+extern qboolean	fastmoving;
+void VID_DamageZBuffer(int u, int v);
+qboolean VID_CheckDamageZBuffer(int u, int v, int ucount, int vcount);
 
 /*
 ====================================================================
@@ -619,6 +597,6 @@ IMPORTED FUNCTIONS
 
 ====================================================================
 */
-extern  refimport_t     ri;
+extern refimport_t	ri;
 
 #endif

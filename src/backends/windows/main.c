@@ -27,7 +27,7 @@
 
 #include <windows.h>
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_Main.h>
+#include <SDL2/SDL_main.h>
 
 #include "../../common/header/common.h"
 
@@ -86,6 +86,22 @@ main(int argc, char **argv)
 				printf("-datadir needs an argument\n");
 				return 1;
 			}
+		}
+
+		// Inject a custom config dir.
+		if (strcmp(argv[i], "-cfgdir") == 0)
+		{
+			// We need an argument.
+			if (i != (argc - 1))
+			{
+				Q_strlcpy(cfgdir, argv[i + 1], sizeof(cfgdir));
+			}
+			else
+			{
+				printf("-cfgdir needs an argument\n");
+				return 1;
+			}
+
 		}
 	}
 

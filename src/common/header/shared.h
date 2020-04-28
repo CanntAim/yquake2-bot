@@ -53,14 +53,46 @@ typedef unsigned char byte;
  #define NULL ((void *)0)
 #endif
 
+// stuff to align variables/arrays and for noreturn
+#if __STDC_VERSION__ >= 201112L // C11 or newer
+	#define YQ2_ALIGNAS_SIZE(SIZE)  _Alignas(SIZE)
+	#define YQ2_ALIGNAS_TYPE(TYPE)  _Alignas(TYPE)
+	// must be used as prefix (YQ2_ATTR_NORETURN void bla();)!
+	#define YQ2_ATTR_NORETURN       _Noreturn
+#elif defined(__GNUC__) // GCC and clang should support this attribute
+	#define YQ2_ALIGNAS_SIZE(SIZE)  __attribute__(( __aligned__(SIZE) ))
+	#define YQ2_ALIGNAS_TYPE(TYPE)  __attribute__(( __aligned__(__alignof__(TYPE)) ))
+	// must be used as prefix (YQ2_ATTR_NORETURN void bla();)!
+	#define YQ2_ATTR_NORETURN       __attribute__ ((noreturn))
+#elif defined(_MSC_VER)
+	#define YQ2_ALIGNAS_SIZE(SIZE)  __declspec( align(SIZE) )
+	#define YQ2_ALIGNAS_TYPE(TYPE)  __declspec( align( __alignof(TYPE) ) )
+	// must be used as prefix (YQ2_ATTR_NORETURN void bla();)!
+	#define YQ2_ATTR_NORETURN       __declspec(noreturn)
+#else
+	#warning "Please add a case for your compiler here to align correctly"
+	#define YQ2_ALIGNAS_TYPE(TYPE)
+	#define YQ2_ATTR_NORETURN
+#endif
+
+#if defined(__GNUC__)
+	/* ISO C11 _Noreturn can't be attached to function pointers, so
+	 * use the gcc/clang-specific version for function pointers, even
+	 * in C11 mode. MSVC __declspec(noreturn) seems to have the same
+	 * restriction as _Noreturn so can't be used here either. */
+	#define YQ2_ATTR_NORETURN_FUNCPTR  __attribute__ ((noreturn))
+#else
+	#define YQ2_ATTR_NORETURN_FUNCPTR  /* nothing */
+#endif
+
 /* angle indexes */
 #define PITCH 0                     /* up / down */
 #define YAW 1                       /* left / right */
 #define ROLL 2                      /* fall over */
 
-#define MAX_STRING_CHARS 1024       /* max length of a string passed to Cmd_TokenizeString */
+#define MAX_STRING_CHARS 2048       /* max length of a string passed to Cmd_TokenizeString */
 #define MAX_STRING_TOKENS 80        /* max tokens resulting from Cmd_TokenizeString */
-#define MAX_TOKEN_CHARS 128         /* max length of an individual token */
+#define MAX_TOKEN_CHARS 1024        /* max length of an individual token */
 
 #define MAX_QPATH 64                /* max length of a quake game pathname */
 
@@ -157,6 +189,7 @@ extern vec3_t vec3_origin;
 
 #define IS_NAN(x) (((*(int *)&x) & nanmask) == nanmask)
 
+// FIXME: use int instead of long, it's only used with int anyway?
 #define Q_ftol(f) (long)(f)
 
 #define DotProduct(x, y) (x[0] * y[0] + x[1] * y[1] + x[2] * y[2])
@@ -254,13 +287,8 @@ int Q_strlcat(char *dst, const char *src, int size);
 
 /* ============================================= */
 
-/* Unicode wrappers around fopen(). */
-
-#ifdef _WIN32
+/* Unicode wrappers that also make sure it's a regular file around fopen(). */
 FILE *Q_fopen(const char *file, const char *mode);
-#else
-#define Q_fopen(file, mode) fopen(file, mode)
-#endif
 
 /* ============================================= */
 
@@ -328,7 +356,7 @@ char *Sys_FindNext(unsigned musthave, unsigned canthave);
 void Sys_FindClose(void);
 
 /* this is only here so the functions in shared source files can link */
-void Sys_Error(char *error, ...);
+YQ2_ATTR_NORETURN void Sys_Error(char *error, ...);
 void Com_Printf(char *msg, ...);
 
 /*
@@ -359,6 +387,9 @@ typedef struct cvar_s
 	qboolean modified; /* set each time the cvar is changed */
 	float value;
 	struct cvar_s *next;
+
+	/* Added by YQ2. Must be at the end to preserve ABI. */
+	char *default_string;
 } cvar_t;
 
 #endif /* CVAR */

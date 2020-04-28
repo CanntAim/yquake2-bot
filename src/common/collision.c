@@ -25,6 +25,8 @@
  * =======================================================================
  */
 
+#include <stdint.h>
+
 #include "header/common.h"
 
 typedef struct
@@ -66,7 +68,8 @@ typedef struct
 
 byte *cmod_base;
 byte map_visibility[MAX_MAP_VISIBILITY];
-byte pvsrow[MAX_MAP_LEAFS / 8];
+// DG: is casted to int32_t* in SV_FatPVS() so align accordingly
+static YQ2_ALIGNAS_TYPE(int32_t) byte pvsrow[MAX_MAP_LEAFS / 8];
 byte phsrow[MAX_MAP_LEAFS / 8];
 carea_t	map_areas[MAX_MAP_AREAS];
 cbrush_t map_brushes[MAX_MAP_BRUSHES];
@@ -1610,16 +1613,53 @@ CMod_LoadVisibility(lump_t *l)
 }
 
 void
-CMod_LoadEntityString(lump_t *l)
+CMod_LoadEntityString(lump_t *l, char *name)
 {
+	if (sv_entfile->value)
+	{
+		char s[MAX_QPATH];
+		char *buffer = NULL;
+		int nameLen, bufLen;
+
+		nameLen = strlen(name);
+		strcpy(s, name);
+		s[nameLen-3] = 'e';	s[nameLen-2] = 'n';	s[nameLen-1] = 't';
+		bufLen = FS_LoadFile(s, (void **)&buffer);
+
+		if (buffer != NULL && bufLen > 1)
+		{
+			if (bufLen + 1 > sizeof(map_entitystring))
+			{
+				Com_Printf("CMod_LoadEntityString: .ent file %s too large: %i > %lu.\n", s, bufLen, (unsigned long)sizeof(map_entitystring));
+				FS_FreeFile(buffer);
+			}
+			else
+			{
+				Com_Printf ("CMod_LoadEntityString: .ent file %s loaded.\n", s);
+				numentitychars = bufLen;
+				memcpy(map_entitystring, buffer, bufLen);
+				map_entitystring[bufLen] = 0; /* jit entity bug - null terminate the entity string! */
+				FS_FreeFile(buffer);
+				return;
+			}
+		}
+		else if (bufLen != -1)
+		{
+			/* If the .ent file is too small, don't load. */
+			Com_Printf("CMod_LoadEntityString: .ent file %s too small.\n", s);
+			FS_FreeFile(buffer);
+		}
+	}
+
 	numentitychars = l->filelen;
 
-	if (l->filelen > MAX_MAP_ENTSTRING)
+	if (l->filelen + 1 > sizeof(map_entitystring))
 	{
 		Com_Error(ERR_DROP, "Map has too large entity lump");
 	}
 
 	memcpy(map_entitystring, cmod_base + l->fileofs, l->filelen);
+	map_entitystring[l->filelen] = 0;
 }
 
 /*
@@ -1636,8 +1676,8 @@ CM_LoadMap(char *name, qboolean clientload, unsigned *checksum)
 
 	map_noareas = Cvar_Get("map_noareas", "0", 0);
 
-	if (!strcmp(map_name,
-				name) && (clientload || !Cvar_VariableValue("flushmap")))
+	if (strcmp(map_name, name) == 0
+		&& (clientload || !Cvar_VariableValue("flushmap")))
 	{
 		*checksum = last_checksum;
 
@@ -1660,7 +1700,7 @@ CM_LoadMap(char *name, qboolean clientload, unsigned *checksum)
 	map_entitystring[0] = 0;
 	map_name[0] = 0;
 
-	if (!name || !name[0])
+	if (!name[0])
 	{
 		numleafs = 1;
 		numclusters = 1;
@@ -1707,7 +1747,8 @@ CM_LoadMap(char *name, qboolean clientload, unsigned *checksum)
 	CMod_LoadAreas(&header.lumps[LUMP_AREAS]);
 	CMod_LoadAreaPortals(&header.lumps[LUMP_AREAPORTALS]);
 	CMod_LoadVisibility(&header.lumps[LUMP_VISIBILITY]);
-	CMod_LoadEntityString(&header.lumps[LUMP_ENTITIES]);
+	/* From kmquake2: adding an extra parameter for .ent support. */
+	CMod_LoadEntityString(&header.lumps[LUMP_ENTITIES], name);
 
 	FS_FreeFile(buf);
 
@@ -1847,7 +1888,6 @@ CM_ClusterPVS(int cluster)
 	{
 		memset(pvsrow, 0, (numclusters + 7) >> 3);
 	}
-
 	else
 	{
 		CM_DecompressVis(map_visibility +

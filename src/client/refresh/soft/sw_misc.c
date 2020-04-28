@@ -17,12 +17,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-// r_misc.c
-#ifdef SDL2
 #include <SDL2/SDL.h>
-#else // SDL1.2
-#include <SDL/SDL.h>
-#endif //SDL2
 
 #include "header/local.h"
 
@@ -35,7 +30,7 @@ float		d_scalemip[NUM_MIPS-1];
 static mleaf_t	*r_viewleaf;
 
 static int	r_frustum_indexes[4*6];
-static float	basemip[NUM_MIPS-1] = {1.0, 0.5*0.8, 0.25*0.8};
+static const float	basemip[NUM_MIPS-1] = {1.0, 0.5*0.8, 0.25*0.8};
 int	d_vrectx, d_vrecty, d_vrectright_particle, d_vrectbottom_particle;
 float	xcenter, ycenter;
 int	d_pix_min, d_pix_max, d_pix_mul;
@@ -48,11 +43,7 @@ D_ViewChanged
 static void
 D_ViewChanged (void)
 {
-	scale_for_mip = xscale;
-	if (yscale > xscale)
-		scale_for_mip = yscale;
-
-	d_zwidth = vid.width;
+	scale_for_mip = sqrt(xscale*xscale + yscale*yscale);
 
 	d_pix_min = r_refdef.vrect.height / 240;
 	if (d_pix_min < 1)
@@ -87,7 +78,8 @@ D_ViewChanged (void)
 R_PrintTimes
 =============
 */
-void R_PrintTimes (void)
+void
+R_PrintTimes (void)
 {
 	int		r_time2;
 	int		ms;
@@ -107,7 +99,8 @@ void R_PrintTimes (void)
 R_PrintDSpeeds
 =============
 */
-void R_PrintDSpeeds (void)
+void
+R_PrintDSpeeds (void)
 {
 	int	ms, dp_time, r_time2, rw_time, db_time, se_time, de_time, da_time;
 
@@ -131,7 +124,8 @@ void R_PrintDSpeeds (void)
 R_PrintAliasStats
 =============
 */
-void R_PrintAliasStats (void)
+void
+R_PrintAliasStats (void)
 {
 	R_Printf(PRINT_ALL,"%3i polygon model drawn\n", r_amodels_drawn);
 }
@@ -143,7 +137,8 @@ void R_PrintAliasStats (void)
 R_TransformFrustum
 ===================
 */
-void R_TransformFrustum (void)
+void
+R_TransformFrustum (void)
 {
 	int		i;
 	vec3_t	v, v2;
@@ -170,7 +165,8 @@ void R_TransformFrustum (void)
 TransformVector
 ================
 */
-void TransformVector (vec3_t in, vec3_t out)
+void
+TransformVector (vec3_t in, vec3_t out)
 {
 	out[0] = DotProduct(in,vright);
 	out[1] = DotProduct(in,vup);
@@ -205,7 +201,7 @@ R_SetUpFrustumIndexes (void)
 			}
 		}
 
-	// FIXME: do just once at start
+		// FIXME: do just once at start
 		pfrustum_indexes[i] = pindex;
 		pindex += 6;
 	}
@@ -316,7 +312,8 @@ R_ViewChanged (vrect_t *vr)
 R_SetupFrame
 ===============
 */
-void R_SetupFrame (void)
+void
+R_SetupFrame (void)
 {
 	int			i;
 	vrect_t		vrect;
@@ -359,7 +356,6 @@ void R_SetupFrame (void)
 		vrect.height = r_newrefdef.height;
 
 		d_viewbuffer = r_warpbuffer;
-		r_screenwidth = vid.width;
 	}
 	else
 	{
@@ -369,7 +365,6 @@ void R_SetupFrame (void)
 		vrect.height = r_newrefdef.height;
 
 		d_viewbuffer = vid_buffer;
-		r_screenwidth = vid.width;
 	}
 
 	R_ViewChanged (&vrect);
@@ -388,8 +383,6 @@ void R_SetupFrame (void)
 	r_polycount = 0;
 	r_drawnpolycount = 0;
 	r_amodels_drawn = 0;
-	r_outofsurfaces = 0;
-	r_outofedges = 0;
 
 	// d_setup
 	d_minmip = sw_mipcap->value;

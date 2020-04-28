@@ -17,17 +17,11 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-// r_aclip.c: clip routines for drawing Alias models directly to the screen
+// sw_aclip.c: clip routines for drawing Alias models directly to the screen
 
 #include "header/local.h"
 
-static finalvert_t fv[2][8];
-
 void R_AliasProjectAndClipTestFinalVert (finalvert_t *fv);
-static void R_Alias_clip_top (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out);
-static void R_Alias_clip_bottom (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out);
-static void R_Alias_clip_left (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out);
-static void R_Alias_clip_right (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out);
 
 /*
 ================
@@ -37,7 +31,7 @@ pfv0 is the unclipped vertex, pfv1 is the z-clipped vertex
 ================
 */
 static void
-R_Alias_clip_z (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
+R_Alias_clip_z (const finalvert_t *pfv0, const finalvert_t *pfv1, finalvert_t *out)
 {
 	float scale;
 
@@ -56,7 +50,7 @@ R_Alias_clip_z (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
 }
 
 static void
-R_Alias_clip_left (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
+R_Alias_clip_left (const finalvert_t *pfv0, const finalvert_t *pfv1, finalvert_t *out)
 {
 	float		scale;
 
@@ -85,7 +79,7 @@ R_Alias_clip_left (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
 }
 
 static void
-R_Alias_clip_right (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
+R_Alias_clip_right (const finalvert_t *pfv0, const finalvert_t *pfv1, finalvert_t *out)
 {
 	float scale;
 
@@ -114,7 +108,7 @@ R_Alias_clip_right (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
 }
 
 static void
-R_Alias_clip_top (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
+R_Alias_clip_top (const finalvert_t *pfv0, const finalvert_t *pfv1, finalvert_t *out)
 {
 	float		scale;
 
@@ -144,8 +138,7 @@ R_Alias_clip_top (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
 
 
 static void
-R_Alias_clip_bottom (finalvert_t *pfv0, finalvert_t *pfv1,
-	finalvert_t *out)
+R_Alias_clip_bottom (const finalvert_t *pfv0, const finalvert_t *pfv1, finalvert_t *out)
 {
 	float		scale;
 
@@ -176,14 +169,15 @@ R_Alias_clip_bottom (finalvert_t *pfv0, finalvert_t *pfv1,
 }
 
 
-int R_AliasClip (finalvert_t *in, finalvert_t *out, int flag, int count,
-	void(*clip)(finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out) )
+int
+R_AliasClip (const finalvert_t *in, finalvert_t *out, int flag, int count,
+	void(*clip)(const finalvert_t *pfv0, const finalvert_t *pfv1, finalvert_t *out) )
 {
 	int			i,j,k;
 
 	j = count-1;
 	k = 0;
-	for (i=0 ; i<count ; j = i, i++)
+	for (i=0 ; i<count ; i++)
 	{
 		int flags, oldflags;
 
@@ -191,7 +185,10 @@ int R_AliasClip (finalvert_t *in, finalvert_t *out, int flag, int count,
 		flags = in[i].flags & flag;
 
 		if (flags && oldflags)
+		{
+			j = i;
 			continue;
+		}
 		if (oldflags ^ flags)
 		{
 			clip (&in[j], &in[i], &out[k]);
@@ -211,6 +208,7 @@ int R_AliasClip (finalvert_t *in, finalvert_t *out, int flag, int count,
 			out[k] = in[i];
 			k++;
 		}
+		j = i;
 	}
 
 	return k;
@@ -222,10 +220,12 @@ int R_AliasClip (finalvert_t *in, finalvert_t *out, int flag, int count,
 R_AliasClipTriangle
 ================
 */
-void R_AliasClipTriangle (finalvert_t *index0, finalvert_t *index1, finalvert_t *index2)
+void
+R_AliasClipTriangle(const entity_t *currententity, const finalvert_t *index0, const finalvert_t *index1, finalvert_t *index2)
 {
 	int				i, k, pingpong;
 	unsigned		clipflags;
+        finalvert_t		fv[2][8];
 
 	// copy vertexes and fix seam texture coordinates
 	fv[0][0] = *index0;
@@ -308,9 +308,6 @@ void R_AliasClipTriangle (finalvert_t *index0, finalvert_t *index1, finalvert_t 
 	// draw triangles
 	for (i=1 ; i<k-1 ; i++)
 	{
-		aliastriangleparms.a = &fv[pingpong][0];
-		aliastriangleparms.b = &fv[pingpong][i];
-		aliastriangleparms.c = &fv[pingpong][i+1];
-		R_DrawTriangle();
+		R_DrawTriangle(currententity, &fv[pingpong][0], &fv[pingpong][i], &fv[pingpong][i+1]);
 	}
 }

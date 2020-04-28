@@ -32,7 +32,7 @@
 #include "shared.h"
 #include "crc.h"
 
-#define YQ2VERSION "7.21pre"
+#define YQ2VERSION "7.44pre"
 #define BASEDIRNAME "baseq2"
 
 #ifndef YQ2OSTYPE
@@ -635,8 +635,6 @@ void Pmove(pmove_t *pmove);
 
 #define SFF_INPACK 0x20
 
-extern qboolean file_from_pak;
-
 typedef int fileHandle_t;
 
 typedef enum
@@ -665,6 +663,11 @@ int FS_FOpenFile(const char *name, fileHandle_t *f, qboolean gamedir_only);
 void FS_FCloseFile(fileHandle_t f);
 int FS_Read(void *buffer, int size, fileHandle_t f);
 int FS_FRead(void *buffer, int size, int count, fileHandle_t f);
+
+// returns the filename used to open f, but (if opened from pack) in correct case
+// returns NULL if f is no valid handle
+const char* FS_GetFilenameForHandle(fileHandle_t f);
+
 char **FS_ListFiles(char *findname, int *numfiles,
 		unsigned musthave, unsigned canthave);
 char **FS_ListFiles2(char *findname, int *numfiles,
@@ -676,6 +679,8 @@ void FS_BuildGameSpecificSearchPath(char *dir);
 char *FS_Gamedir(void);
 char *FS_NextPath(char *prevpath);
 int FS_LoadFile(char *path, void **buffer);
+qboolean FS_FileInGamedir(const char *file);
+qboolean FS_AddPAKFromGamedir(const char *pak);
 const char* FS_GetNextRawPath(const char* lastRawPath);
 
 /* a null buffer will just return the file length without loading */
@@ -705,8 +710,23 @@ void Com_Printf(char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
 void Com_DPrintf(char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
 void Com_VPrintf(int print_level, const char *fmt, va_list argptr); /* print_level is PRINT_ALL or PRINT_DEVELOPER */
 void Com_MDPrintf(char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
-void Com_Error(int code, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
-void Com_Quit(void);
+YQ2_ATTR_NORETURN void Com_Error(int code, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
+YQ2_ATTR_NORETURN void Com_Quit(void);
+
+/* Ugly hack: Apprently (our?) MinGW-gcc under Windows
+   doesn't support %zd and requires %Id. */
+#ifdef WIN32
+#define YQ2_COM_PRIdS "%Id"
+#else
+#define YQ2_COM_PRIdS "%zd"
+#endif
+
+// terminate yq2 (with Com_Error()) if VAR is NULL (after malloc() or similar)
+// and print message about it
+#define YQ2_COM_CHECK_OOM(VAR, ALLOC_FN_NAME, ALLOC_SIZE) \
+	if(VAR == NULL) { \
+		Com_Error(ERR_FATAL, "%s for " YQ2_COM_PRIdS " bytes failed in %s() (%s == NULL)! Out of Memory?!\n", \
+		                     ALLOC_FN_NAME, (size_t)ALLOC_SIZE, __func__, #VAR); }
 
 int Com_ServerState(void);              /* this should have just been a cvar... */
 void Com_SetServerState(int state);
@@ -720,11 +740,17 @@ extern cvar_t *dedicated;
 extern cvar_t *host_speeds;
 extern cvar_t *log_stats;
 
+/* External entity files. */
+extern cvar_t *sv_entfile;
+
 /* Hack for portable client */
 extern qboolean is_portable;
 
-/* Hack fo external datadir */
+/* Hack for external datadir */
 extern char datadir[MAX_OSPATH];
+
+/* Hack for external datadir */
+extern char cfgdir[MAX_OSPATH];
 
 /* Hack for working 'game' cmd */
 extern char userGivenGame[MAX_QPATH];
@@ -774,10 +800,13 @@ void SV_Frame(int msec);
 // system.c
 char *Sys_ConsoleInput(void);
 void Sys_ConsoleOutput(char *string);
-void Sys_Error(char *error, ...);
-void Sys_Quit(void);
+YQ2_ATTR_NORETURN void Sys_Error(char *error, ...);
+YQ2_ATTR_NORETURN void Sys_Quit(void);
 void Sys_Init(void);
 char *Sys_GetHomeDir(void);
+void Sys_Remove(const char *path);
+int Sys_Rename(const char *from, const char *to);
+void Sys_RemoveDir(const char *path);
 long long Sys_Microseconds(void);
 void Sys_Nanosleep(int);
 void *Sys_GetProcAddress(void *handle, const char *sym);

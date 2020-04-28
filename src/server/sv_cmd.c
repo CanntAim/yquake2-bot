@@ -208,6 +208,8 @@ SV_GameMap_f(void)
 			   at spawn points instead of occupying body shells */
 			savedInuse = malloc(maxclients->value * sizeof(qboolean));
 
+			YQ2_COM_CHECK_OOM(savedInuse, "malloc()", maxclients->value * sizeof(qboolean))
+
 			for (i = 0, cl = svs.clients; i < maxclients->value; i++, cl++)
 			{
 				savedInuse[i] = cl->edict->inuse;
@@ -226,11 +228,43 @@ SV_GameMap_f(void)
 		}
 	}
 
+	// it's possible to start a map with the wrong case, e.g. "/map BASE1"
+	// (even though the mapfile is maps/base1.bsp)
+	// however, that will screw up the corresponding savegame (for going back to last map)
+	// which will then be called baseq2/save/bla/BASE1.sav - because when going back to the
+	// map from base2 it will look for .../base1.sav
+	// so try to fix the mapname here
+	// NOTE: does not properly handle all variations like base2$base1 and whatever else we forgot
+	//       but so far we haven't run into problems with that anyway
+	char mapPath[MAX_QPATH];
+	{
+		qboolean haveStar = (map[0] == '*');
+		snprintf(mapPath, sizeof(mapPath), "maps/%s.bsp", haveStar ? map+1 : map);
+
+		fileHandle_t f = -1;
+		if(FS_FOpenFile(mapPath, &f, false) >= 0)
+		{
+			const char* realMapPath = FS_GetFilenameForHandle(f);
+			// now mapPath contains the fixed path
+			Q_strlcpy(mapPath, realMapPath, sizeof(mapPath));
+			FS_FCloseFile(f);
+
+			map = mapPath + 4; // skip "maps"
+			if(haveStar)
+				map[0] = '*'; // restore it (=> replace '/' by '*')
+			else
+				++map; // skip '/'
+
+			map[strlen(map)-4] = '\0'; // cut off ".bsp"
+		}
+	}
+
+
 	/* start up the next map */
-	SV_Map(false, Cmd_Argv(1), false);
+	SV_Map(false, map, false);
 
 	/* archive server state */
-	Q_strlcpy(svs.mapcmd, Cmd_Argv(1), sizeof(svs.mapcmd));
+	Q_strlcpy(svs.mapcmd, map, sizeof(svs.mapcmd));
 
 	/* copy off the level to the autosave slot */
 	if (!dedicated->value)

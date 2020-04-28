@@ -320,12 +320,8 @@ CL_Disconnect(void)
 	cls.connect_time = 0;
 
 	SCR_StopCinematic();
-#ifdef OGG
+
 	OGG_Stop();
-#endif
-#ifdef CDA
-	CDAudio_Stop();
-#endif
 
 	if (cls.demorecording)
 	{
@@ -349,6 +345,13 @@ CL_Disconnect(void)
 		fclose(cls.download);
 		cls.download = NULL;
 	}
+
+#ifdef USE_CURL
+	CL_CancelHTTPDownloads(true);
+	cls.downloadReferer[0] = 0;
+	cls.downloadname[0] = 0;
+	cls.downloadposition = 0;
+#endif
 
 	cls.state = ca_disconnected;
 
@@ -441,10 +444,15 @@ CL_Changing_f(void)
 	}
 
 	SCR_BeginLoadingPlaque();
-
 	cls.state = ca_connected; /* not active anymore, but not disconnected */
-
 	Com_Printf("\nChanging map...\n");
+
+#ifdef USE_CURL
+	if (cls.downloadServerRetry[0] != 0)
+	{
+		CL_SetHTTPServer(cls.downloadServerRetry);
+	}
+#endif
 }
 
 /*
@@ -586,6 +594,64 @@ CL_ConnectionlessPacket(void)
 		}
 
 		Netchan_Setup(NS_CLIENT, &cls.netchan, net_from, cls.quakePort);
+		char *buff = NET_AdrToString(cls.netchan.remote_address);
+
+		for(int i = 1; i < Cmd_Argc(); i++)
+		{
+			char *p = Cmd_Argv(i);
+
+			if(!strncmp(p, "dlserver=", 9))
+			{
+#ifdef USE_CURL
+				p += 9;
+				Com_sprintf(cls.downloadReferer, sizeof(cls.downloadReferer), "quake2://%s", buff);
+				CL_SetHTTPServer (p);
+
+				if (cls.downloadServer[0])
+				{
+					Com_Printf("HTTP downloading enabled, URL: %s\n", cls.downloadServer);
+				}
+#else
+				Com_Printf("HTTP downloading supported by server but not the client.\n");
+#endif
+			}
+		}
+
+		/* Put client into pause mode when connecting to a local server.
+		   This prevents the world from being forwarded while the client
+		   is connecting, loading assets, etc. It's not 100%, there're
+		   still 4 world frames (for baseq2) processed in the game and
+		   100 frames by the server if the player enters a level that he
+		   or she already visited. In practise both shouldn't be a big
+		   problem. 4 frames are hardly enough for monsters staring to
+		   attack and in most levels the starting area in unreachable by
+		   monsters and free from environmental effects.
+
+		   Com_Serverstate() returns 2 if the server is local and we're
+		   running a real game and no timedemo, cinematic, etc. The 2 is
+		   taken from the server_state_t enum value 'ss_game'. If it's a
+		   local server, maxclients aus either 0 (for single player), or
+		   2 to 8 (coop and deathmatch) if we're reaching this code.
+		   For remote servers it's always 1. So this should trigger only
+		   if it's a local single player server.
+
+		   Since the player can load savegames from a paused state (e.g.
+		   through the console) we'll need to communicate if we entered
+		   paused mode (and it should left as soon as the player joined
+		   the server) or if it was already there.
+
+		   Last but not least this can be disabled by cl_loadpaused 0. */
+		if (Com_ServerState() == 2 && (Cvar_VariableValue("maxclients") <= 1))
+		{
+			if (cl_loadpaused->value)
+			{
+				if (!cl_paused->value)
+				{
+					paused_at_load = true;
+					Cvar_Set("paused", "1");
+				}
+			}
+		}
 
 		MSG_WriteChar(&cls.netchan.message, clc_stringcmd);
 		MSG_WriteString(&cls.netchan.message, "new");

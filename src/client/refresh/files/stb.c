@@ -28,7 +28,7 @@
 
 #include <stdlib.h>
 
-#include "../gl1/header/local.h"
+#include "../ref_shared.h"
 
 // don't need HDR stuff
 #define STBI_NO_LINEAR
@@ -40,6 +40,10 @@
 // include implementation part of stb_image into this file
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+// include resize implementation
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb_image_resize.h"
 
 /*
  * origname: the filename to be opened, might be without extension
@@ -89,5 +93,11 @@ LoadSTB(const char *origname, const char* type, byte **pic, int *width, int *hei
 	return true;
 }
 
-
-
+extern qboolean ResizeSTB(byte *input_pixels, int input_width, int input_height,
+			  byte *output_pixels, int output_width, int output_height)
+{
+	if (stbir_resize_uint8(input_pixels, input_width, input_height, 0,
+			       output_pixels, output_width, output_height, 0, 4))
+		return true;
+	return false;
+}

@@ -18,24 +18,35 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-// r_main.c
+// sw_main.c
 #include <stdint.h>
+#include <limits.h>
 
-#ifdef SDL2
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_video.h>
 
-#else // SDL1.2
-#include <SDL/SDL.h>
-#endif //SDL2
-
 #include "header/local.h"
+
+#define NUMSTACKEDGES		2048
+#define NUMSTACKSURFACES	1024
+#define MAXALIASVERTS		2048
+#define MAXLIGHTS		1024 // allow some very large lightmaps
 
 viddef_t	vid;
 pixel_t		*vid_buffer = NULL;
+static pixel_t	*swap_buffers = NULL;
+static pixel_t	*swap_frames[2] = {NULL, NULL};
+static int	swap_current = 0;
 espan_t		*vid_polygon_spans = NULL;
 pixel_t		*vid_colormap = NULL;
 pixel_t		*vid_alphamap = NULL;
+static int	vid_minu, vid_minv, vid_maxu, vid_maxv;
+static int	vid_zminu, vid_zminv, vid_zmaxu, vid_zmaxv;
+
+// last position  on map
+static vec3_t	lastvieworg;
+static vec3_t	lastviewangles;
+qboolean	fastmoving;
 
 refimport_t	ri;
 
@@ -47,28 +58,43 @@ char		skyname[MAX_QPATH];
 vec3_t		skyaxis;
 
 refdef_t	r_newrefdef;
-model_t		*currentmodel;
 
 model_t		*r_worldmodel;
 
 pixel_t		*r_warpbuffer;
 
+typedef struct swstate_s
+{
+	qboolean	fullscreen;
+	int		prev_mode; // last valid SW mode
+
+	unsigned char	gammatable[256];
+	unsigned char	currentpalette[1024];
+} swstate_t;
+
 static swstate_t sw_state;
 
-void		*colormap;
-float		r_time1;
-int			r_numallocatededges;
-float		r_aliasuvscale = 1.0;
-int			r_outofsurfaces;
-int			r_outofedges;
+void	*colormap;
+float	r_time1;
+int	r_numallocatededges;
+int	r_numallocatedverts;
+int	r_numallocatedtriangles;
+int	r_numallocatedlights;
+int	r_numallocatededgebasespans;
+float	r_aliasuvscale = 1.0;
+qboolean	r_outofsurfaces;
+qboolean	r_outofedges;
+qboolean	r_outofverts;
+qboolean	r_outoftriangles;
+qboolean	r_outoflights;
+qboolean	r_outedgebasespans;
 
 qboolean	r_dowarp;
 
 mvertex_t	*r_pcurrentvertbase;
 
-int			c_surf;
-static int	r_maxsurfsseen, r_maxedgesseen, r_cnumsurfs;
-static qboolean	r_surfsonstack;
+int		c_surf;
+static int	r_cnumsurfs;
 int	r_clipflags;
 
 //
@@ -87,8 +113,6 @@ float		xscale, yscale;
 float		xscaleinv, yscaleinv;
 float		xscaleshrink, yscaleshrink;
 float		aliasxscale, aliasyscale, aliasxcenter, aliasycenter;
-
-int		r_screenwidth;
 
 mplane_t	screenedge[4];
 
@@ -114,17 +138,15 @@ static cvar_t	*sw_aliasstats;
 cvar_t	*sw_clearcolor;
 cvar_t	*sw_drawflat;
 cvar_t	*sw_draworder;
-static cvar_t	*sw_maxedges;
-static cvar_t	*sw_maxsurfs;
 static cvar_t  *r_mode;
-static cvar_t	*sw_reportedgeout;
-static cvar_t	*sw_reportsurfout;
 cvar_t  *sw_stipplealpha;
 cvar_t	*sw_surfcacheoverride;
 cvar_t	*sw_waterwarp;
 static cvar_t	*sw_overbrightbits;
 cvar_t	*sw_custom_particles;
 cvar_t	*sw_texture_filtering;
+cvar_t	*sw_retexturing;
+static cvar_t	*sw_partialrefresh;
 
 cvar_t	*r_drawworld;
 static cvar_t	*r_drawentities;
@@ -143,13 +165,9 @@ cvar_t	*r_lightlevel;	//FIXME HACK
 static cvar_t	*vid_fullscreen;
 static cvar_t	*vid_gamma;
 
-//PGM
 static cvar_t	*r_lockpvs;
-//PGM
 
-#define	STRINGER(x) "x"
-
-// r_vars.c
+// sw_vars.c
 
 // all global and static refresh variables are collected in a contiguous block
 // to avoid cache conflicts.
@@ -174,9 +192,9 @@ static cvar_t	*r_lockpvs;
 // FIXME: make into one big structure, like cl or sv
 // FIXME: do separately for refresh engine and driver
 
-float	d_sdivzstepu, d_tdivzstepu, d_zistepu;
-float	d_sdivzstepv, d_tdivzstepv, d_zistepv;
-float	d_sdivzorigin, d_tdivzorigin, d_ziorigin;
+float	d_sdivzstepu, d_tdivzstepu;
+float	d_sdivzstepv, d_tdivzstepv;
+float	d_sdivzorigin, d_tdivzorigin;
 
 int	sadjust, tadjust, bbextents, bbextentt;
 
@@ -184,57 +202,138 @@ pixel_t		*cacheblock;
 int		cachewidth;
 pixel_t		*d_viewbuffer;
 zvalue_t	*d_pzbuffer;
-unsigned int	d_zwidth;
-
-qboolean	insubmodel;
-
-static struct texture_buffer {
-	image_t	image;
-	byte	buffer[1024];
-} r_notexture_buffer;
 
 static void Draw_GetPalette (void);
 static void RE_BeginFrame( float camera_separation );
-static void Draw_BuildGammaTable( void );
+static void Draw_BuildGammaTable(void);
+static void RE_FlushFrame(int vmin, int vmax);
+static void RE_CleanFrame(void);
 static void RE_EndFrame(void);
-static void R_DrawBeam(entity_t *e);
+static void R_DrawBeam(const entity_t *e);
 
 /*
-==================
-R_InitTextures
-==================
+================
+VID_DamageZBuffer
+
+Mark VID Z buffer as damaged and need to be recalculated
+================
 */
-static void
-R_InitTextures (void)
+void
+VID_DamageZBuffer(int u, int v)
 {
-	int		x,y, m;
-
-	// create a simple checkerboard texture for the default
-	r_notexture_mip = &r_notexture_buffer.image;
-
-	r_notexture_mip->width = r_notexture_mip->height = 16;
-	r_notexture_mip->pixels[0] = r_notexture_buffer.buffer;
-	r_notexture_mip->pixels[1] = r_notexture_mip->pixels[0] + 16*16;
-	r_notexture_mip->pixels[2] = r_notexture_mip->pixels[1] + 8*8;
-	r_notexture_mip->pixels[3] = r_notexture_mip->pixels[2] + 4*4;
-
-	for (m=0 ; m<4 ; m++)
+	// update U
+	if (vid_zminu > u)
 	{
-		byte	*dest;
+		vid_zminu = u;
+	}
+	if (vid_zmaxu < u)
+	{
+		vid_zmaxu = u;
+	}
 
-		dest = r_notexture_mip->pixels[m];
-		for (y=0 ; y< (16>>m) ; y++)
-			for (x=0 ; x< (16>>m) ; x++)
-			{
-				if (  (y< (8>>m) ) ^ (x< (8>>m) ) )
-
-					*dest++ = 0;
-				else
-					*dest++ = 0xff;
-			}
+	// update V
+	if (vid_zminv > v)
+	{
+		vid_zminv = v;
+	}
+	if (vid_zmaxv < v)
+	{
+		vid_zmaxv = v;
 	}
 }
 
+// clean z damage state
+static void
+VID_NoDamageZBuffer(void)
+{
+	vid_zminu = vid.width;
+	vid_zmaxu = 0;
+	vid_zminv = vid.height;
+	vid_zmaxv = 0;
+}
+
+qboolean
+VID_CheckDamageZBuffer(int u, int v, int ucount, int vcount)
+{
+	if (vid_zminv > (v + vcount) || vid_zmaxv < v)
+	{
+		// can be used previous zbuffer
+		return false;
+	}
+
+	if (vid_zminu > u && vid_zminu > (u + ucount))
+	{
+		// can be used previous zbuffer
+		return false;
+	}
+
+	if (vid_zmaxu < u && vid_zmaxu < (u + ucount))
+	{
+		// can be used previous zbuffer
+		return false;
+	}
+	return true;
+}
+
+// Need to recalculate whole z buffer
+static void
+VID_WholeDamageZBuffer(void)
+{
+	vid_zminu = 0;
+	vid_zmaxu = vid.width;
+	vid_zminv = 0;
+	vid_zmaxv = vid.height;
+}
+
+/*
+================
+VID_DamageBuffer
+
+Mark VID buffer as damaged and need to be rewritten
+================
+*/
+void
+VID_DamageBuffer(int u, int v)
+{
+	// update U
+	if (vid_minu > u)
+	{
+		vid_minu = u;
+	}
+	if (vid_maxu < u)
+	{
+		vid_maxu = u;
+	}
+	// update V
+	if (vid_minv > v)
+	{
+		vid_minv = v;
+	}
+	if (vid_maxv < v)
+	{
+		vid_maxv = v;
+	}
+}
+
+// clean damage state
+static void
+VID_NoDamageBuffer(void)
+{
+	vid_minu = vid.width;
+	vid_maxu = 0;
+	vid_minv = vid.height;
+	vid_maxv = 0;
+}
+
+// Need to rewrite whole buffer
+static void
+VID_WholeDamageBuffer(void)
+{
+	vid_minu = 0;
+	vid_maxu = vid.width;
+	vid_minv = 0;
+	vid_maxv = vid.height;
+}
 
 /*
 ================
@@ -254,28 +353,35 @@ R_InitTurb (void)
 	}
 }
 
-void R_ImageList_f( void );
-static void R_ScreenShot_f( void );
+void R_ImageList_f(void);
+static void R_ScreenShot_f(void);
 
 static void
-R_Register (void)
+R_RegisterVariables (void)
 {
 	sw_aliasstats = ri.Cvar_Get ("sw_polymodelstats", "0", 0);
 	sw_clearcolor = ri.Cvar_Get ("sw_clearcolor", "2", 0);
 	sw_drawflat = ri.Cvar_Get ("sw_drawflat", "0", 0);
 	sw_draworder = ri.Cvar_Get ("sw_draworder", "0", 0);
-	sw_maxedges = ri.Cvar_Get ("sw_maxedges", STRINGER(MAXSTACKSURFACES), 0);
-	sw_maxsurfs = ri.Cvar_Get ("sw_maxsurfs", "0", 0);
 	sw_mipcap = ri.Cvar_Get ("sw_mipcap", "0", 0);
 	sw_mipscale = ri.Cvar_Get ("sw_mipscale", "1", 0);
-	sw_reportedgeout = ri.Cvar_Get ("sw_reportedgeout", "0", 0);
-	sw_reportsurfout = ri.Cvar_Get ("sw_reportsurfout", "0", 0);
 	sw_stipplealpha = ri.Cvar_Get( "sw_stipplealpha", "0", CVAR_ARCHIVE );
 	sw_surfcacheoverride = ri.Cvar_Get ("sw_surfcacheoverride", "0", 0);
 	sw_waterwarp = ri.Cvar_Get ("sw_waterwarp", "1", 0);
 	sw_overbrightbits = ri.Cvar_Get("sw_overbrightbits", "1.0", CVAR_ARCHIVE);
 	sw_custom_particles = ri.Cvar_Get("sw_custom_particles", "0", CVAR_ARCHIVE);
 	sw_texture_filtering = ri.Cvar_Get("sw_texture_filtering", "0", CVAR_ARCHIVE);
+	sw_retexturing = ri.Cvar_Get("sw_retexturing", "0", CVAR_ARCHIVE);
+
+	// On MacOS texture is cleaned up after render and code have to copy a whole
+	// screen to texture, other platforms save previous texture content and can be
+	// copied only changed parts
+#if defined(__APPLE__)
+	sw_partialrefresh = ri.Cvar_Get("sw_partialrefresh", "0", CVAR_ARCHIVE);
+#else
+	sw_partialrefresh = ri.Cvar_Get("sw_partialrefresh", "1", CVAR_ARCHIVE);
+#endif
+
 	r_mode = ri.Cvar_Get( "r_mode", "0", CVAR_ARCHIVE );
 
 	r_lefthand = ri.Cvar_Get( "hand", "0", CVAR_USERINFO | CVAR_ARCHIVE );
@@ -302,11 +408,9 @@ R_Register (void)
 
 	r_mode->modified = true; // force us to do mode specific stuff later
 	vid_gamma->modified = true; // force us to rebuild the gamma table later
-	sw_overbrightbits->modified = true; // force us to rebuild pallete later
+	sw_overbrightbits->modified = true; // force us to rebuild palette later
 
-	//PGM
 	r_lockpvs = ri.Cvar_Get ("r_lockpvs", "0", 0);
-	//PGM
 }
 
 static void
@@ -317,7 +421,10 @@ R_UnRegister (void)
 	ri.Cmd_RemoveCommand( "imagelist" );
 }
 
-static void SWimp_Shutdown(void );
+static void RE_ShutdownContext(void);
+static void SWimp_CreateRender(void);
+static int RE_InitContext(void *win);
+static qboolean RE_SetMode(void);
 
 /*
 ===============
@@ -327,10 +434,13 @@ R_Init
 static qboolean
 RE_Init(void)
 {
+	R_Printf(PRINT_ALL, "Refresh: " REF_VERSION "\n");
+	R_Printf(PRINT_ALL, "Client: " YQ2VERSION "\n\n");
+
+	R_RegisterVariables ();
 	R_InitImages ();
 	Mod_Init ();
 	Draw_InitLocal ();
-	R_InitTextures ();
 
 	view_clipplanes[0].leftedge = true;
 	view_clipplanes[1].rightedge = true;
@@ -344,15 +454,20 @@ RE_Init(void)
 
 	r_aliasuvscale = 1.0;
 
-	R_Register ();
 	Draw_GetPalette ();
-	if (!ri.GLimp_Init())
+
+	/* set our "safe" mode */
+	sw_state.prev_mode = 4;
+
+	/* create the window and set up the context */
+	if (!RE_SetMode())
+	{
+		R_Printf(PRINT_ALL, "%s() could not R_SetMode()\n", __func__);
 		return false;
+	}
 
 	// create the window
-	RE_BeginFrame( 0 );
-
-	R_Printf(PRINT_ALL, "ref_soft version: "REF_VERSION"\n");
+	ri.Vid_MenuInit();
 
 	return true;
 }
@@ -389,7 +504,7 @@ RE_Shutdown (void)
 	Mod_FreeAll ();
 	R_ShutdownImages ();
 
-	SWimp_Shutdown();
+	RE_ShutdownContext();
 }
 
 /*
@@ -397,51 +512,211 @@ RE_Shutdown (void)
 R_NewMap
 ===============
 */
-void R_NewMap (void)
+void
+R_NewMap (void)
 {
 	r_viewcluster = -1;
+}
 
-	r_cnumsurfs = sw_maxsurfs->value;
+static surf_t	*lsurfs;
 
-	if (r_cnumsurfs <= MINSURFACES)
-		r_cnumsurfs = MINSURFACES;
-
-	if (r_cnumsurfs > NUMSTACKSURFACES)
+/*
+===============
+R_ReallocateMapBuffers
+===============
+*/
+static void
+R_ReallocateMapBuffers (void)
+{
+	if (!r_cnumsurfs || r_outofsurfaces)
 	{
-		surfaces = malloc (r_cnumsurfs * sizeof(surf_t));
-		if (!surfaces)
+		if(lsurfs)
 		{
-		    R_Printf(PRINT_ALL, "R_NewMap: Couldn't malloc %d bytes\n", (int)(r_cnumsurfs * sizeof(surf_t)));
-		    return;
+			free(lsurfs);
 		}
 
-		surface_p = surfaces;
+		if (r_outofsurfaces)
+		{
+			r_cnumsurfs *= 2;
+			r_outofsurfaces = false;
+		}
+
+		if (r_cnumsurfs < NUMSTACKSURFACES)
+			r_cnumsurfs = NUMSTACKSURFACES;
+
+		// edge_t->surf limited size to short
+		if (r_cnumsurfs > SURFINDEX_MAX)
+		{
+			r_cnumsurfs = SURFINDEX_MAX;
+			R_Printf(PRINT_ALL, "%s: Code has limitation to surfaces count.\n",
+				 __func__);
+		}
+
+		lsurfs = malloc (r_cnumsurfs * sizeof(surf_t));
+		if (!lsurfs)
+		{
+			R_Printf(PRINT_ALL, "%s: Couldn't malloc %d bytes\n",
+				 __func__, (int)(r_cnumsurfs * sizeof(surf_t)));
+			return;
+		}
+
+		surfaces = lsurfs;
+		// set limits
 		surf_max = &surfaces[r_cnumsurfs];
-		r_surfsonstack = false;
 		// surface 0 doesn't really exist; it's just a dummy because index 0
 		// is used to indicate no edge attached to surface
 		surfaces--;
+
+		surface_p = &surfaces[2];	// background is surface 1,
+						//  surface 0 is a dummy
+
+		R_Printf(PRINT_ALL, "Allocated %d surfaces\n", r_cnumsurfs);
 	}
-	else
+
+	if (!r_numallocatedlights || r_outoflights)
 	{
-		r_surfsonstack = true;
+		if (!blocklights)
+		{
+			free(blocklights);
+		}
+
+		if (r_outoflights)
+		{
+			r_numallocatedlights *= 2;
+			r_outoflights = false;
+		}
+
+		if (r_numallocatedlights < MAXLIGHTS)
+			r_numallocatedlights = MAXLIGHTS;
+
+		blocklights = malloc (r_numallocatedlights * sizeof(light_t));
+		if (!blocklights)
+		{
+			R_Printf(PRINT_ALL, "%s: Couldn't malloc %d bytes\n",
+				 __func__, (int)(r_numallocatedlights * sizeof(light_t)));
+			return;
+		}
+
+		// set limits
+		blocklight_max = &blocklights[r_numallocatedlights];
+
+		R_Printf(PRINT_ALL, "Allocated %d lights\n", r_numallocatedlights);
 	}
 
-	r_maxedgesseen = 0;
-	r_maxsurfsseen = 0;
-
-	r_numallocatededges = sw_maxedges->value;
-
-	if (r_numallocatededges < MINEDGES)
-		r_numallocatededges = MINEDGES;
-
-	if (r_numallocatededges <= NUMSTACKEDGES)
+	if (!r_numallocatededges || r_outofedges)
 	{
-		auxedges = NULL;
+		if (!r_edges)
+		{
+			free(r_edges);
+		}
+
+		if (r_outofedges)
+		{
+			r_numallocatededges *= 2;
+			r_outofedges = false;
+		}
+
+		if (r_numallocatededges < NUMSTACKEDGES)
+			r_numallocatededges = NUMSTACKEDGES;
+
+		r_edges = malloc (r_numallocatededges * sizeof(edge_t));
+		if (!r_edges)
+		{
+			R_Printf(PRINT_ALL, "%s: Couldn't malloc %d bytes\n",
+				 __func__, (int)(r_numallocatededges * sizeof(edge_t)));
+			return;
+		}
+
+		// set limits
+		edge_max = &r_edges[r_numallocatededges];
+		edge_p = r_edges;
+
+		R_Printf(PRINT_ALL, "Allocated %d edges\n", r_numallocatededges);
 	}
-	else
+
+	if (!r_numallocatedverts || r_outofverts)
 	{
-		auxedges = malloc (r_numallocatededges * sizeof(edge_t));
+		if (finalverts)
+		{
+			free(finalverts);
+		}
+
+		if (r_outofverts)
+		{
+			r_numallocatedverts *= 2;
+			r_outofverts = false;
+		}
+
+		if (r_numallocatedverts < MAXALIASVERTS)
+			r_numallocatedverts = MAXALIASVERTS;
+
+		finalverts = malloc(r_numallocatedverts * sizeof(finalvert_t));
+		if (!finalverts)
+		{
+			R_Printf(PRINT_ALL, "%s: Couldn't malloc %d bytes\n",
+				 __func__, (int)(r_numallocatedverts * sizeof(finalvert_t)));
+			return;
+		}
+		finalverts_max = &finalverts[r_numallocatedverts];
+
+		R_Printf(PRINT_ALL, "Allocated %d verts\n", r_numallocatedverts);
+	}
+
+	if (!r_numallocatedtriangles || r_outoftriangles)
+	{
+		if (triangle_spans)
+		{
+			free(triangle_spans);
+		}
+
+		if (r_outoftriangles)
+		{
+			r_numallocatedtriangles *= 2;
+			r_outoftriangles = false;
+		}
+
+		if (r_numallocatedtriangles < vid.height)
+			r_numallocatedtriangles = vid.height;
+
+		triangle_spans  = malloc(r_numallocatedtriangles * sizeof(spanpackage_t));
+		if (!triangle_spans)
+		{
+			R_Printf(PRINT_ALL, "%s: Couldn't malloc %d bytes\n",
+				 __func__, (int)(r_numallocatedtriangles * sizeof(spanpackage_t)));
+			return;
+		}
+		triangles_max = &triangle_spans[r_numallocatedtriangles];
+
+		R_Printf(PRINT_ALL, "Allocated %d triangles\n", r_numallocatedtriangles);
+	}
+
+	if (!r_numallocatededgebasespans || r_outedgebasespans)
+	{
+		if (edge_basespans)
+		{
+			free(edge_basespans);
+		}
+
+		if (r_outedgebasespans)
+		{
+			r_numallocatededgebasespans *= 2;
+			r_outedgebasespans = false;
+		}
+
+		// used up to 8 * width spans for render, allocate once  before use
+		if (r_numallocatededgebasespans < vid.width * 8)
+			r_numallocatededgebasespans = vid.width * 8;
+
+		edge_basespans  = malloc(r_numallocatededgebasespans * sizeof(espan_t));
+		if (!edge_basespans)
+		{
+			R_Printf(PRINT_ALL, "%s: Couldn't malloc %d bytes\n",
+				 __func__, (int)(r_numallocatededgebasespans * sizeof(espan_t)));
+			return;
+		}
+		max_span_p = &edge_basespans[r_numallocatededgebasespans];
+
+		R_Printf(PRINT_ALL, "Allocated %d edgespans\n", r_numallocatededgebasespans);
 	}
 }
 
@@ -512,7 +787,7 @@ R_MarkLeaves (void)
 ** IMPLEMENT THIS!
 */
 static void
-R_DrawNullModel( void )
+R_DrawNullModel(void)
 {
 }
 
@@ -533,7 +808,7 @@ R_DrawEntitiesOnList (void)
 	// all bmodels have already been drawn by the edge list
 	for (i=0 ; i<r_newrefdef.num_entities ; i++)
 	{
-		currententity = &r_newrefdef.entities[i];
+		entity_t *currententity = &r_newrefdef.entities[i];
 
 		if ( currententity->flags & RF_TRANSLUCENT )
 		{
@@ -546,12 +821,12 @@ R_DrawEntitiesOnList (void)
 			modelorg[0] = -r_origin[0];
 			modelorg[1] = -r_origin[1];
 			modelorg[2] = -r_origin[2];
-			VectorCopy( vec3_origin, r_entorigin );
-			R_DrawBeam( currententity );
+			VectorCopy(vec3_origin, r_entorigin);
+			R_DrawBeam(currententity);
 		}
 		else
 		{
-			currentmodel = currententity->model;
+			const model_t *currentmodel = currententity->model;
 			if (!currentmodel)
 			{
 				R_DrawNullModel();
@@ -563,11 +838,11 @@ R_DrawEntitiesOnList (void)
 			switch (currentmodel->type)
 			{
 			case mod_sprite:
-				R_DrawSprite ();
+				R_DrawSprite(currententity, currentmodel);
 				break;
 
 			case mod_alias:
-				R_AliasDrawModel ();
+				R_AliasDrawModel(currententity, currentmodel);
 				break;
 
 			default:
@@ -581,7 +856,7 @@ R_DrawEntitiesOnList (void)
 
 	for (i=0 ; i<r_newrefdef.num_entities ; i++)
 	{
-		currententity = &r_newrefdef.entities[i];
+		entity_t *currententity = &r_newrefdef.entities[i];
 
 		if ( !( currententity->flags & RF_TRANSLUCENT ) )
 			continue;
@@ -591,12 +866,12 @@ R_DrawEntitiesOnList (void)
 			modelorg[0] = -r_origin[0];
 			modelorg[1] = -r_origin[1];
 			modelorg[2] = -r_origin[2];
-			VectorCopy( vec3_origin, r_entorigin );
-			R_DrawBeam( currententity );
+			VectorCopy(vec3_origin, r_entorigin);
+			R_DrawBeam(currententity);
 		}
 		else
 		{
-			currentmodel = currententity->model;
+			const model_t *currentmodel = currententity->model;
 			if (!currentmodel)
 			{
 				R_DrawNullModel();
@@ -608,11 +883,11 @@ R_DrawEntitiesOnList (void)
 			switch (currentmodel->type)
 			{
 			case mod_sprite:
-				R_DrawSprite ();
+				R_DrawSprite(currententity, currentmodel);
 				break;
 
 			case mod_alias:
-				R_AliasDrawModel ();
+				R_AliasDrawModel(currententity, currentmodel);
 				break;
 
 			default:
@@ -629,7 +904,7 @@ R_BmodelCheckBBox
 =============
 */
 static int
-R_BmodelCheckBBox (float *minmaxs)
+R_BmodelCheckBBox (const float *minmaxs)
 {
 	int i, clipflags;
 
@@ -724,7 +999,7 @@ Returns an axially aligned box that contains the input box at the given rotation
 =============
 */
 static void
-RotatedBBox (vec3_t mins, vec3_t maxs, vec3_t angles, vec3_t tmins, vec3_t tmaxs)
+RotatedBBox (const vec3_t mins, const vec3_t maxs, vec3_t angles, vec3_t tmins, vec3_t tmaxs)
 {
 	vec3_t	tmp, v;
 	int		i, j;
@@ -739,8 +1014,8 @@ RotatedBBox (vec3_t mins, vec3_t maxs, vec3_t angles, vec3_t tmins, vec3_t tmaxs
 
 	for (i=0 ; i<3 ; i++)
 	{
-		tmins[i] = 99999;
-		tmaxs[i] = -99999;
+		tmins[i] = INT_MAX; // Set maximum values for world range
+		tmaxs[i] = INT_MIN;  // Set minimal values for world range
 	}
 
 	AngleVectors (angles, forward, right, up);
@@ -795,13 +1070,11 @@ R_DrawBEntitiesOnList (void)
 		return;
 
 	VectorCopy (modelorg, oldorigin);
-	insubmodel = true;
-	r_dlightframecount = r_framecount;
 
 	for (i=0 ; i<r_newrefdef.num_entities ; i++)
 	{
-		currententity = &r_newrefdef.entities[i];
-		currentmodel = currententity->model;
+		entity_t *currententity = &r_newrefdef.entities[i];
+		const model_t *currentmodel = currententity->model;
 		if (!currentmodel)
 			continue;
 		if (currentmodel->nummodelsurfaces == 0)
@@ -831,7 +1104,7 @@ R_DrawBEntitiesOnList (void)
 		r_pcurrentvertbase = currentmodel->vertexes;
 
 		// FIXME: stop transforming twice
-		R_RotateBmodel ();
+		R_RotateBmodel(currententity);
 
 		// calculate dynamic lighting for bmodel
 		R_PushDlights (currentmodel);
@@ -840,14 +1113,14 @@ R_DrawBEntitiesOnList (void)
 		{
 			// not a leaf; has to be clipped to the world BSP
 			r_clipflags = clipflags;
-			R_DrawSolidClippedSubmodelPolygons (currentmodel, topnode);
+			R_DrawSolidClippedSubmodelPolygons(currententity, currentmodel, topnode);
 		}
 		else
 		{
 			// falls entirely in one leaf, so we just put all the
 			// edges in the edge list and let 1/z sorting handle
 			// drawing order
-			R_DrawSubmodelPolygons (currentmodel, clipflags, topnode);
+			R_DrawSubmodelPolygons(currententity, currentmodel, clipflags, topnode);
 		}
 
 		// put back world rotation and frustum clipping
@@ -858,12 +1131,7 @@ R_DrawBEntitiesOnList (void)
 		VectorCopy (oldorigin, modelorg);
 		R_TransformFrustum ();
 	}
-
-	insubmodel = false;
 }
-
-static edge_t	*ledges;
-static surf_t	*lsurfs;
 
 /*
 ================
@@ -878,26 +1146,11 @@ R_EdgeDrawing (void)
 	if ( r_newrefdef.rdflags & RDF_NOWORLDMODEL )
 		return;
 
-	if (auxedges)
-	{
-		r_edges = auxedges;
-	}
-	else
-	{
-		r_edges = ledges;
-	}
-
-	if (r_surfsonstack)
-	{
-		surfaces = lsurfs;
-		surf_max = &surfaces[r_cnumsurfs];
-		// surface 0 doesn't really exist; it's just a dummy because index 0
-		// is used to indicate no edge attached to surface
-		surfaces--;
-	}
-
 	// Set function pointer pdrawfunc used later in this function
 	R_BeginEdgeFrame ();
+	edge_p = r_edges;
+	surface_p = &surfaces[2];	// background is surface 1,
+					//  surface 0 is a dummy
 
 	if (r_dspeeds->value)
 	{
@@ -924,12 +1177,12 @@ R_EdgeDrawing (void)
 
 	// Use the Global Edge Table to maintin the Active Edge Table: Draw the world as scanlines
 	// Write the Z-Buffer (but no read)
-	R_ScanEdges ();
+	R_ScanEdges (surface_p);
 }
 
 //=======================================================================
 
-static void	R_GammaCorrectAndSetPalette(const unsigned char *pal);
+static void	R_GammaCorrectAndSetPalette(const unsigned char *palette);
 
 /*
 =============
@@ -989,7 +1242,7 @@ R_CalcPalette (void)
 //=======================================================================
 
 static void
-R_SetLightLevel (void)
+R_SetLightLevel (const entity_t *currententity)
 {
 	vec3_t		light;
 
@@ -1000,10 +1253,20 @@ R_SetLightLevel (void)
 	}
 
 	// save off light value for server to look at (BIG HACK!)
-	R_LightPoint (r_newrefdef.vieworg, light);
+	R_LightPoint (currententity, r_newrefdef.vieworg, light);
 	r_lightlevel->value = 150.0 * light[0];
 }
 
+static int
+VectorCompareRound(vec3_t v1, vec3_t v2)
+{
+	if ((int)(v1[0] - v2[0]) || (int)(v1[1] - v2[1]) || (int)(v1[2] - v2[2]))
+	{
+		return 0;
+	}
+
+	return 1;
+}
 
 /*
 ================
@@ -1017,10 +1280,30 @@ RE_RenderFrame (refdef_t *fd)
 	r_newrefdef = *fd;
 
 	if (!r_worldmodel && !( r_newrefdef.rdflags & RDF_NOWORLDMODEL ) )
-		ri.Sys_Error (ERR_FATAL,"R_RenderView: NULL worldmodel");
+	{
+		ri.Sys_Error(ERR_FATAL, "%s: NULL worldmodel", __func__);
+	}
+
+	// Need to rerender whole frame
+	VID_WholeDamageBuffer();
 
 	VectorCopy (fd->vieworg, r_refdef.vieworg);
 	VectorCopy (fd->viewangles, r_refdef.viewangles);
+
+	// compare current position with old
+	if (!VectorCompareRound(fd->vieworg, lastvieworg) ||
+	    !VectorCompare(fd->viewangles, lastviewangles))
+	{
+		fastmoving = true;
+	}
+	else
+	{
+		fastmoving = false;
+	}
+
+	// save position for next check
+	VectorCopy (fd->vieworg, lastvieworg);
+	VectorCopy (fd->viewangles, lastviewangles);
 
 	if (r_speeds->value || r_dspeeds->value)
 		r_time1 = SDL_GetTicks();
@@ -1044,8 +1327,18 @@ RE_RenderFrame (refdef_t *fd)
 		de_time1 = se_time2;
 	}
 
+	if (fastmoving)
+	{
+		// redraw all
+		VID_WholeDamageZBuffer();
+	}
+	else
+	{
+		// No Z rewrite required
+		VID_NoDamageZBuffer();
+	}
 	// Draw enemies, barrel etc...
-	// Use Z-Buffer in read mode only.
+	// Use Z-Buffer mostly in read mode only.
 	R_DrawEntitiesOnList ();
 
 	if (r_dspeeds->value)
@@ -1061,19 +1354,19 @@ RE_RenderFrame (refdef_t *fd)
 		dp_time2 = SDL_GetTicks();
 
 	// Perform pixel palette blending ia the pics/colormap.pcx lower part lookup table.
-	R_DrawAlphaSurfaces();
+	R_DrawAlphaSurfaces(&r_worldentity);
 
 	// Save off light value for server to look at (BIG HACK!)
-	R_SetLightLevel ();
+	R_SetLightLevel (&r_worldentity);
 
 	if (r_dowarp)
 		D_WarpScreen ();
 
 	if (r_dspeeds->value)
+	{
 		da_time1 = SDL_GetTicks();
-
-	if (r_dspeeds->value)
 		da_time2 = SDL_GetTicks();
+	}
 
 	// Modify the palette (when taking hit or pickup item) so all colors are modified
 	R_CalcPalette ();
@@ -1087,11 +1380,7 @@ RE_RenderFrame (refdef_t *fd)
 	if (r_dspeeds->value)
 		R_PrintDSpeeds ();
 
-	if (sw_reportsurfout->value && r_outofsurfaces)
-		R_Printf(PRINT_ALL,"Short %d surfaces\n", r_outofsurfaces);
-
-	if (sw_reportedgeout->value && r_outofedges)
-		R_Printf(PRINT_ALL,"Short roughly %d edges\n", r_outofedges * 2 / 3);
+	R_ReallocateMapBuffers();
 }
 
 /*
@@ -1133,6 +1422,11 @@ static rserr_t	SWimp_SetMode(int *pwidth, int *pheight, int mode, int fullscreen
 static void
 RE_BeginFrame( float camera_separation )
 {
+	while (r_mode->modified || vid_fullscreen->modified || r_vsync->modified)
+	{
+		RE_SetMode();
+	}
+
 	/*
 	** rebuild the gamma correction palette if necessary
 	*/
@@ -1140,55 +1434,93 @@ RE_BeginFrame( float camera_separation )
 	{
 		Draw_BuildGammaTable();
 		R_GammaCorrectAndSetPalette((const unsigned char * )d_8to24table);
+		// we need redraw everything
+		VID_WholeDamageBuffer();
+		// and backbuffer should be zeroed
+		memset(swap_buffers + ((swap_current + 1)&1), 0, vid.height * vid.width * sizeof(pixel_t));
 
 		vid_gamma->modified = false;
 		sw_overbrightbits->modified = false;
 	}
+}
 
-	while (r_mode->modified || vid_fullscreen->modified || r_vsync->modified)
+/*
+==================
+R_SetMode
+==================
+*/
+static qboolean
+RE_SetMode(void)
+{
+	int err;
+	int fullscreen;
+
+	fullscreen = (int)vid_fullscreen->value;
+
+	vid_fullscreen->modified = false;
+	r_mode->modified = false;
+	r_vsync->modified = false;
+
+	/* a bit hackish approach to enable custom resolutions:
+	   Glimp_SetMode needs these values set for mode -1 */
+	vid.width = r_customwidth->value;
+	vid.height = r_customheight->value;
+
+	/*
+	** if this returns rserr_invalid_fullscreen then it set the mode but not as a
+	** fullscreen mode, e.g. 320x200 on a system that doesn't support that res
+	*/
+	if ((err = SWimp_SetMode(&vid.width, &vid.height, r_mode->value, fullscreen)) == rserr_ok)
 	{
-		rserr_t err;
-
+		R_InitGraphics( vid.width, vid.height );
 		if (r_mode->value == -1)
 		{
-			vid.width = r_customwidth->value;
-			vid.height = r_customheight->value;
-		}
-
-		/*
-		** if this returns rserr_invalid_fullscreen then it set the mode but not as a
-		** fullscreen mode, e.g. 320x200 on a system that doesn't support that res
-		*/
-		if ((err = SWimp_SetMode( &vid.width, &vid.height, r_mode->value, vid_fullscreen->value)) == rserr_ok )
-		{
-			R_InitGraphics( vid.width, vid.height );
-
-			sw_state.prev_mode = r_mode->value;
-			vid_fullscreen->modified = false;
-			r_mode->modified = false;
-			r_vsync->modified = false;
+			sw_state.prev_mode = 4; /* safe default for custom mode */
 		}
 		else
 		{
-			if ( err == rserr_invalid_mode )
-			{
-				ri.Cvar_SetValue( "r_mode", sw_state.prev_mode );
-				R_Printf( PRINT_ALL, "ref_soft::RE_BeginFrame() - could not set mode\n" );
-			}
-			else if ( err == rserr_invalid_fullscreen )
-			{
-				R_InitGraphics( vid.width, vid.height );
-
-				ri.Cvar_SetValue( "vid_fullscreen", 0);
-				R_Printf( PRINT_ALL, "ref_soft::RE_BeginFrame() - fullscreen unavailable in this mode\n" );
-				sw_state.prev_mode = r_mode->value;
-			}
-			else
-			{
-				ri.Sys_Error( ERR_FATAL, "ref_soft::RE_BeginFrame() - catastrophic mode change failure\n" );
-			}
+			sw_state.prev_mode = r_mode->value;
 		}
 	}
+	else
+	{
+		if (err == rserr_invalid_fullscreen)
+		{
+			R_InitGraphics( vid.width, vid.height );
+
+			ri.Cvar_SetValue("vid_fullscreen", 0);
+			vid_fullscreen->modified = false;
+			R_Printf(PRINT_ALL, "%s() - fullscreen unavailable in this mode\n", __func__);
+
+			if ((SWimp_SetMode(&vid.width, &vid.height, r_mode->value, 0)) == rserr_ok)
+			{
+				return true;
+			}
+		}
+		else if (err == rserr_invalid_mode)
+		{
+			R_Printf(PRINT_ALL, "%s() - invalid mode\n", __func__);
+
+			if(r_mode->value == sw_state.prev_mode)
+			{
+				// trying again would result in a crash anyway, give up already
+				// (this would happen if your initing fails at all and your resolution already was 640x480)
+				return false;
+			}
+
+			ri.Cvar_SetValue("r_mode", sw_state.prev_mode);
+			r_mode->modified = false;
+		}
+
+		/* try setting it back to something safe */
+		if ((SWimp_SetMode(&vid.width, &vid.height, sw_state.prev_mode, 0)) != rserr_ok)
+		{
+			R_Printf(PRINT_ALL, "%s() - could not revert to safe mode\n", __func__);
+			return false;
+		}
+	}
+
+	return true;
 }
 
 /*
@@ -1201,9 +1533,10 @@ R_GammaCorrectAndSetPalette( const unsigned char *palette )
 
 	for ( i = 0; i < 256; i++ )
 	{
-		sw_state.currentpalette[i*4+0] = sw_state.gammatable[palette[i*4+0]];
-		sw_state.currentpalette[i*4+1] = sw_state.gammatable[palette[i*4+1]];
-		sw_state.currentpalette[i*4+2] = sw_state.gammatable[palette[i*4+2]];
+		sw_state.currentpalette[i*4+0] = sw_state.gammatable[palette[i*4+2]]; // blue
+		sw_state.currentpalette[i*4+1] = sw_state.gammatable[palette[i*4+1]]; // green
+		sw_state.currentpalette[i*4+2] = sw_state.gammatable[palette[i*4+0]]; // red
+		sw_state.currentpalette[i*4+3] = 0xFF; // alpha
 	}
 }
 
@@ -1214,16 +1547,14 @@ static void
 RE_SetPalette(const unsigned char *palette)
 {
 	byte palette32[1024];
-	int i;
 
 	// clear screen to black to avoid any palette flash
-	memset(vid_buffer, 0, vid.height * vid.width * sizeof(pixel_t));
-
-	// flush it to the screen
-	RE_EndFrame ();
+	RE_CleanFrame();
 
 	if (palette)
 	{
+		int i;
+
 		for ( i = 0; i < 256; i++ )
 		{
 			palette32[i*4+0] = palette[i*3+0];
@@ -1295,7 +1626,7 @@ Draw_BuildGammaTable (void)
 ** R_DrawBeam
 */
 static void
-R_DrawBeam( entity_t *e )
+R_DrawBeam(const entity_t *e)
 {
 #define NUM_BEAM_SEGS 6
 
@@ -1351,8 +1682,8 @@ RE_SetSky
 ============
 */
 // 3dstudio environment map names
-char	*suf[6] = {"rt", "bk", "lf", "ft", "up", "dn"};
-static int	r_skysideimage[6] = {5, 2, 4, 1, 0, 3};
+static const char	*suf[6] = {"rt", "bk", "lf", "ft", "up", "dn"};
+static const int	r_skysideimage[6] = {5, 2, 4, 1, 0, 3};
 extern	mtexinfo_t		r_skytexinfo[6];
 
 static void
@@ -1437,6 +1768,12 @@ RE_IsVsyncActive(void)
 	}
 }
 
+static int RE_PrepareForWindow(void)
+{
+	int flags = SDL_SWSURFACE;
+	return flags;
+}
+
 /*
 ===============
 GetRefAPI
@@ -1445,223 +1782,85 @@ GetRefAPI
 Q2_DLL_EXPORTED refexport_t
 GetRefAPI(refimport_t imp)
 {
-	refexport_t	re;
+	// struct for save refexport callbacks, copy of re struct from main file
+	// used different variable name for prevent confusion and cppcheck warnings
+	refexport_t	refexport;
 
-	memset(&re, 0, sizeof(refexport_t));
+	memset(&refexport, 0, sizeof(refexport_t));
 	ri = imp;
 
-	re.api_version = API_VERSION;
+	refexport.api_version = API_VERSION;
 
-	re.BeginRegistration = RE_BeginRegistration;
-	re.RegisterModel = RE_RegisterModel;
-	re.RegisterSkin = RE_RegisterSkin;
-	re.DrawFindPic = RE_Draw_FindPic;
-	re.SetSky = RE_SetSky;
-	re.EndRegistration = RE_EndRegistration;
+	refexport.BeginRegistration = RE_BeginRegistration;
+	refexport.RegisterModel = RE_RegisterModel;
+	refexport.RegisterSkin = RE_RegisterSkin;
+	refexport.DrawFindPic = RE_Draw_FindPic;
+	refexport.SetSky = RE_SetSky;
+	refexport.EndRegistration = RE_EndRegistration;
 
-	re.RenderFrame = RE_RenderFrame;
+	refexport.RenderFrame = RE_RenderFrame;
 
-	re.DrawGetPicSize = RE_Draw_GetPicSize;
+	refexport.DrawGetPicSize = RE_Draw_GetPicSize;
 
-	re.DrawPicScaled = RE_Draw_PicScaled;
-	re.DrawStretchPic = RE_Draw_StretchPic;
-	re.DrawCharScaled = RE_Draw_CharScaled;
-	re.DrawTileClear = RE_Draw_TileClear;
-	re.DrawFill = RE_Draw_Fill;
-	re.DrawFadeScreen = RE_Draw_FadeScreen;
+	refexport.DrawPicScaled = RE_Draw_PicScaled;
+	refexport.DrawStretchPic = RE_Draw_StretchPic;
+	refexport.DrawCharScaled = RE_Draw_CharScaled;
+	refexport.DrawTileClear = RE_Draw_TileClear;
+	refexport.DrawFill = RE_Draw_Fill;
+	refexport.DrawFadeScreen = RE_Draw_FadeScreen;
 
-	re.DrawStretchRaw = RE_Draw_StretchRaw;
+	refexport.DrawStretchRaw = RE_Draw_StretchRaw;
 
-	re.Init = RE_Init;
-	re.IsVSyncActive = RE_IsVsyncActive;
-	re.Shutdown = RE_Shutdown;
+	refexport.Init = RE_Init;
+	refexport.IsVSyncActive = RE_IsVsyncActive;
+	refexport.Shutdown = RE_Shutdown;
+	refexport.InitContext = RE_InitContext;
+	refexport.ShutdownContext = RE_ShutdownContext;
+	refexport.PrepareForWindow = RE_PrepareForWindow;
 
-	re.SetPalette = RE_SetPalette;
-	re.BeginFrame = RE_BeginFrame;
-	re.EndFrame = RE_EndFrame;
+	refexport.SetPalette = RE_SetPalette;
+	refexport.BeginFrame = RE_BeginFrame;
+	refexport.EndFrame = RE_EndFrame;
 
 	Swap_Init ();
 
-	return re;
+	return refexport;
 }
-
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-static SDL_Window* window = NULL;
-static SDL_Surface *surface = NULL;
-static SDL_Texture *texture = NULL;
-static SDL_Renderer *renderer = NULL;
-#else
-static SDL_Surface* window = NULL;
-#endif
-static qboolean X11_active = false;
 
 /*
- * Sets the window icon
+ * FIXME: The following functions implement the render backend
+ * through SDL renderer. Only small parts belong here, refresh.c
+ * (at client side) needs to grow support funtions for software
+ * renderers and the renderer must use them. What's left here
+ * should be moved to a new file sw_sdl.c.
+ *
+ * Very, very problematic is at least the SDL initalization and
+ * window creation in this code. That is guaranteed to clash with
+ * the GL renderers (when switching GL -> Soft or the other way
+ * round) and works only by pure luck. And only as long as there
+ * is only one software renderer.
  */
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 
-/* The 64x64 32bit window icon */
-#include "../../../backends/sdl/icon/q2icon64.h"
-
-static void
-SetSDLIcon()
-{
-	/* these masks are needed to tell SDL_CreateRGBSurface(From)
-	   to assume the data it gets is byte-wise RGB(A) data */
-	Uint32 rmask, gmask, bmask, amask;
-#if SDL_BYTEORDER == SDL_BIG_ENDIAN
-	int shift = (q2icon64.bytes_per_pixel == 3) ? 8 : 0;
-	rmask = 0xff000000 >> shift;
-	gmask = 0x00ff0000 >> shift;
-	bmask = 0x0000ff00 >> shift;
-	amask = 0x000000ff >> shift;
-#else /* little endian, like x86 */
-	rmask = 0x000000ff;
-	gmask = 0x0000ff00;
-	bmask = 0x00ff0000;
-	amask = (q2icon64.bytes_per_pixel == 3) ? 0 : 0xff000000;
-#endif
-
-	SDL_Surface* icon = SDL_CreateRGBSurfaceFrom((void*)q2icon64.pixel_data, q2icon64.width,
-		q2icon64.height, q2icon64.bytes_per_pixel*8, q2icon64.bytes_per_pixel*q2icon64.width,
-		rmask, gmask, bmask, amask);
-
-	SDL_SetWindowIcon(window, icon);
-
-	SDL_FreeSurface(icon);
-}
-
-#else /* SDL 1.2 */
-
-/* The window icon */
-#include "../../../backends/sdl/icon/q2icon.xbm"
-
-static void
-SetSDLIcon()
-{
-	SDL_Surface *icon;
-	SDL_Color transColor, solidColor;
-	Uint8 *ptr;
-	int i;
-	int mask;
-
-	icon = SDL_CreateRGBSurface(SDL_SWSURFACE,
-			q2icon_width, q2icon_height, 8,
-			0, 0, 0, 0);
-
-	if (icon == NULL)
-	{
-		return;
-	}
-
-	SDL_SetColorKey(icon, SDL_SRCCOLORKEY, 0);
-
-	transColor.r = 255;
-	transColor.g = 255;
-	transColor.b = 255;
-
-	solidColor.r = 0;
-	solidColor.g = 0;
-	solidColor.b = 0;
-
-	SDL_SetColors(icon, &transColor, 0, 1);
-	SDL_SetColors(icon, &solidColor, 1, 1);
-
-	ptr = (Uint8 *)icon->pixels;
-
-	for (i = 0; i < sizeof(q2icon_bits); i++)
-	{
-		for (mask = 1; mask != 0x100; mask <<= 1)
-		{
-			*ptr = (q2icon_bits[i] & mask) ? 1 : 0;
-			ptr++;
-		}
-	}
-
-	SDL_WM_SetIcon(icon, NULL);
-
-	SDL_FreeSurface(icon);
-}
-#endif /* SDL 1.2 */
+static SDL_Window	*window = NULL;
+static SDL_Texture	*texture = NULL;
+static SDL_Renderer	*renderer = NULL;
 
 static int
-IsFullscreen()
-{
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-	if (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP) {
-		return 1;
-	} else if (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) {
-		return 2;
-	} else {
-		return 0;
-	}
-#else
-	return !!(window->flags & SDL_FULLSCREEN);
-#endif
-}
-
-static qboolean
-GetWindowSize(int* w, int* h)
-{
-	if(window == NULL || w == NULL || h == NULL)
-		return false;
-
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-	SDL_DisplayMode m;
-	if(SDL_GetWindowDisplayMode(window, &m) != 0)
-	{
-		Com_Printf("Can't get Displaymode: %s\n", SDL_GetError());
-		return false;
-	}
-	*w = m.w;
-	*h = m.h;
-#else
-	*w = window->w;
-	*h = window->h;
-#endif
-
-	return true;
-}
-
-static int
-R_InitContext(void* win)
+RE_InitContext(void *win)
 {
 	char title[40] = {0};
 
 	if(win == NULL)
 	{
-		ri.Sys_Error(ERR_FATAL, "R_InitContext() must not be called with NULL argument!");
+		ri.Sys_Error(ERR_FATAL, "RE_InitContext() must not be called with NULL argument!");
 		return false;
 	}
 
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-	window = (SDL_Window*)win;
-#else // SDL 1.2
-	window = (SDL_Surface*)win;
-#endif
+	window = (SDL_Window *)win;
 
 	/* Window title - set here so we can display renderer name in it */
 	snprintf(title, sizeof(title), "Yamagi Quake II %s - Soft Render", YQ2VERSION);
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 	SDL_SetWindowTitle(window, title);
-#else
-	SDL_WM_SetCaption(title, title);
-#endif
-
-	return true;
-}
-
-static qboolean CreateSDLWindow(int flags, int w, int h)
-{
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-	Uint32 Rmask, Gmask, Bmask, Amask;
-	int bpp;
-	int windowPos = SDL_WINDOWPOS_UNDEFINED;
-	if (!SDL_PixelFormatEnumToMasks(SDL_PIXELFORMAT_ARGB8888, &bpp, &Rmask, &Gmask, &Bmask, &Amask))
-		return 0;
-
-	// TODO: support fullscreen on different displays with SDL_WINDOWPOS_UNDEFINED_DISPLAY(displaynum)
-	window = SDL_CreateWindow("Yamagi Quake II", windowPos, windowPos, w, h, flags);
 
 	if (r_vsync->value)
 	{
@@ -1672,27 +1871,39 @@ static qboolean CreateSDLWindow(int flags, int w, int h)
 		renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 	}
 
-	surface = SDL_CreateRGBSurface(0, w, h, bpp, Rmask, Gmask, Bmask, Amask);
+	/* Select the color for drawing. It is set to black here. */
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+
+	/* Clear the entire screen to our selected color. */
+	SDL_RenderClear(renderer);
+
+	/* Up until now everything was drawn behind the scenes.
+	   This will show the new, black contents of the window. */
+	SDL_RenderPresent(renderer);
 
 	texture = SDL_CreateTexture(renderer,
-								   SDL_PIXELFORMAT_ARGB8888,
-								   SDL_TEXTUREACCESS_STREAMING,
-								   w, h);
-	return window != NULL;
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+				    SDL_PIXELFORMAT_BGRA8888,
 #else
-	window = SDL_SetVideoMode(w, h, 0, flags);
-	SDL_EnableUNICODE(SDL_TRUE);
-	return window != NULL;
+				    SDL_PIXELFORMAT_ARGB8888,
 #endif
+				    SDL_TEXTUREACCESS_STREAMING,
+				    vid.width, vid.height);
+
+	return true;
 }
 
-static void SWimp_DestroyRender(void)
+static void
+RE_ShutdownContext(void)
 {
-	if (vid_buffer)
+	if (swap_buffers)
 	{
-		free(vid_buffer);
+		free(swap_buffers);
 	}
+	swap_buffers = NULL;
 	vid_buffer = NULL;
+	swap_frames[0] = NULL;
+	swap_frames[1] = NULL;
 
 	if (sintable)
 	{
@@ -1760,11 +1971,17 @@ static void SWimp_DestroyRender(void)
 	}
 	finalverts = NULL;
 
-	if(ledges)
+	if(blocklights)
 	{
-		free(ledges);
+		free(blocklights);
 	}
-	ledges = NULL;
+	blocklights = NULL;
+
+	if(r_edges)
+	{
+		free(r_edges);
+	}
+	r_edges = NULL;
 
 	if(lsurfs)
 	{
@@ -1778,34 +1995,17 @@ static void SWimp_DestroyRender(void)
 	}
 	r_warpbuffer = NULL;
 
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 	if (texture)
 	{
 		SDL_DestroyTexture(texture);
 	}
 	texture = NULL;
 
-	if (surface)
-	{
-		SDL_FreeSurface(surface);
-	}
-	surface = NULL;
-
 	if (renderer)
 	{
 		SDL_DestroyRenderer(renderer);
 	}
 	renderer = NULL;
-
-	/* Is the surface used? */
-	if (window)
-		SDL_DestroyWindow(window);
-#else
-	/* Is the surface used? */
-	if (window)
-		SDL_FreeSurface(window);
-#endif
-	window = NULL;
 }
 
 /*
@@ -1814,103 +2014,248 @@ point math used in R_ScanEdges() overflows at width 2048 !!
 */
 char shift_size;
 
-/*
-** SWimp_InitGraphics
-**
-** This initializes the software refresh's implementation specific
-** graphics subsystem.  In the case of Windows it creates DIB or
-** DDRAW surfaces.
-**
-** The necessary width and height parameters are grabbed from
-** vid.width and vid.height.
-*/
-static qboolean
-SWimp_InitGraphics(int fullscreen, int *pwidth, int *pheight)
+static void
+RE_CopyFrame (Uint32 * pixels, int pitch, int vmin, int vmax)
 {
-	int flags;
-	int curWidth, curHeight;
-	int width = *pwidth;
-	int height = *pheight;
-	unsigned int fs_flag = 0;
+	Uint32 *sdl_palette = (Uint32 *)sw_state.currentpalette;
 
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-	if (fullscreen == 1) {
-		fs_flag = SDL_WINDOW_FULLSCREEN_DESKTOP;
-	} else if (fullscreen == 2) {
-		fs_flag = SDL_WINDOW_FULLSCREEN;
-	}
-#else
-	if (fullscreen) {
-		fs_flag = SDL_FULLSCREEN;
-	}
-#endif
-
-	if (GetWindowSize(&curWidth, &curHeight) && (curWidth == width) && (curHeight == height))
+	// no gaps between images rows
+	if (pitch == vid.width)
 	{
-		/* If we want fullscreen, but aren't */
-		if (fullscreen != IsFullscreen())
-		{
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-			SDL_SetWindowFullscreen(window, fs_flag);
-#else
-			SDL_WM_ToggleFullScreen(window);
-#endif
+		const Uint32	*max_pixels;
+		Uint32	*pixels_pos;
+		pixel_t	*buffer_pos;
 
-			ri.Cvar_SetValue("vid_fullscreen", fullscreen);
-		}
+		max_pixels = pixels + vmax;
+		buffer_pos = vid_buffer + vmin;
 
-		/* Are we now? */
-		if (fullscreen == IsFullscreen())
+		for (pixels_pos = pixels + vmin; pixels_pos < max_pixels; pixels_pos++)
 		{
-			return true;
+			*pixels_pos = sdl_palette[*buffer_pos];
+			buffer_pos++;
 		}
 	}
-
-	SWimp_DestroyRender();
-
-	// let the sound and input subsystems know about the new window
-	ri.Vid_NewWindow (vid.width, vid.height);
-
-#if !SDL_VERSION_ATLEAST(2, 0, 0)
-	/* Set window icon - For SDL1.2, this must be done before creating the window */
-	SetSDLIcon();
-#endif
-
-	flags = SDL_SWSURFACE;
-	if (fs_flag)
+	else
 	{
-		flags |= fs_flag;
-	}
+		int y,x, buffer_pos, ymin, ymax;
 
-	while (1)
-	{
-		if (!CreateSDLWindow(flags, width, height))
+		ymin = vmin / vid.width;
+		ymax = vmax / vid.width;
+
+		buffer_pos = ymin * vid.width;
+		pixels += ymin * pitch;
+		for (y=ymin; y < ymax;  y++)
 		{
-			Sys_Error("(SOFTSDL) SDL SetVideoMode failed: %s\n", SDL_GetError());
-			return false;
-		}
-		else
-		{
-			break;
+			for (x=0; x < vid.width; x ++)
+			{
+				pixels[x] = sdl_palette[vid_buffer[buffer_pos + x]];
+			}
+			pixels += pitch;
+			buffer_pos += vid.width;
 		}
 	}
+}
 
-	if(!R_InitContext(window))
+static int
+RE_BufferDifferenceStart(int vmin, int vmax)
+{
+	int *front_buffer, *back_buffer, *back_max;
+
+	back_buffer = (int*)(swap_frames[0] + vmin);
+	front_buffer = (int*)(swap_frames[1] + vmin);
+	back_max = (int*)(swap_frames[0] + vmax);
+
+	while (back_buffer < back_max && *back_buffer == *front_buffer) {
+		back_buffer ++;
+		front_buffer ++;
+	}
+	return (pixel_t*)back_buffer - swap_frames[0];
+}
+
+static int
+RE_BufferDifferenceEnd(int vmin, int vmax)
+{
+	int *front_buffer, *back_buffer, *back_min;
+
+	back_buffer = (int*)(swap_frames[0] + vmax);
+	front_buffer = (int*)(swap_frames[1] + vmax);
+	back_min = (int*)(swap_frames[0] + vmin);
+
+	do {
+		back_buffer --;
+		front_buffer --;
+	} while (back_buffer > back_min && *back_buffer == *front_buffer);
+        // +1 for fully cover changes
+	return (pixel_t*)back_buffer - swap_frames[0] + sizeof(int);
+}
+
+static void
+RE_CleanFrame(void)
+{
+	int pitch;
+	Uint32 *pixels;
+
+	memset(swap_buffers, 0, vid.height * vid.width * sizeof(pixel_t) * 2);
+
+	if (SDL_LockTexture(texture, NULL, (void**)&pixels, &pitch))
 	{
-		// InitContext() should have logged an error
-		return false;
+		Com_Printf("Can't lock texture: %s\n", SDL_GetError());
+		return;
+	}
+	// only cleanup texture without flush texture to screen
+	memset(pixels, 0, pitch * vid.height);
+	SDL_UnlockTexture(texture);
+
+	// All changes flushed
+	VID_NoDamageBuffer();
+}
+
+static void
+RE_FlushFrame(int vmin, int vmax)
+{
+	int pitch;
+	Uint32 *pixels;
+
+	if (SDL_LockTexture(texture, NULL, (void**)&pixels, &pitch))
+	{
+		Com_Printf("Can't lock texture: %s\n", SDL_GetError());
+		return;
+	}
+	if (sw_partialrefresh->value)
+	{
+		RE_CopyFrame (pixels, pitch / sizeof(Uint32), vmin, vmax);
+	}
+	else
+	{
+		// On MacOS texture is cleaned up after render,
+		// code have to copy a whole screen to the texture
+		RE_CopyFrame (pixels, pitch / sizeof(Uint32), 0, vid.height * vid.width);
+	}
+	SDL_UnlockTexture(texture);
+
+	SDL_RenderCopy(renderer, texture, NULL, NULL);
+	SDL_RenderPresent(renderer);
+
+	// replace use next buffer
+	swap_current ++;
+	vid_buffer = swap_frames[swap_current&1];
+
+	// All changes flushed
+	VID_NoDamageBuffer();
+}
+
+/*
+** RE_EndFrame
+**
+** This does an implementation specific copy from the backbuffer to the
+** front buffer.
+*/
+static void
+RE_EndFrame (void)
+{
+	int vmin, vmax;
+
+	// fix possible issue with min/max
+	if (vid_minu < 0)
+	{
+		vid_minu = 0;
+	}
+	if (vid_minv < 0)
+	{
+		vid_minv = 0;
+	}
+	if (vid_maxu > vid.width)
+	{
+		vid_maxu = vid.width;
+	}
+	if (vid_maxv > vid.height)
+	{
+		vid_maxv = vid.height;
 	}
 
-	/* Note: window title is now set in re.InitContext() to include renderer name */
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-	/* Set the window icon - For SDL2, this must be done after creating the window */
-	SetSDLIcon();
-#endif
+	vmin = vid_minu + vid_minv  * vid.width;
+	vmax = vid_maxu + vid_maxv  * vid.width;
 
-	/* No cursor */
-	SDL_ShowCursor(0);
+	// fix to correct limit
+	if (vmax > (vid.height * vid.width))
+	{
+		vmax = vid.height * vid.width;
+	}
 
-	vid_buffer = malloc(vid.height * vid.width * sizeof(pixel_t));
+	// search real begin/end of difference
+	vmin = RE_BufferDifferenceStart(vmin, vmax);
+
+	// no differences found
+	if (vmin >= vmax)
+	{
+		return;
+	}
+
+	// search difference end
+	vmax = RE_BufferDifferenceEnd(vmin, vmax);
+	if (vmax > (vid.height * vid.width))
+	{
+		vmax = vid.height * vid.width;
+	}
+
+	RE_FlushFrame(vmin, vmax);
+}
+
+/*
+** SWimp_SetMode
+*/
+static rserr_t
+SWimp_SetMode(int *pwidth, int *pheight, int mode, int fullscreen )
+{
+	rserr_t retval = rserr_ok;
+
+	R_Printf (PRINT_ALL, "setting mode %d:", mode );
+
+	if ((mode >= 0) && !ri.Vid_GetModeInfo( pwidth, pheight, mode ) )
+	{
+		R_Printf( PRINT_ALL, " invalid mode\n" );
+		return rserr_invalid_mode;
+	}
+
+	/* We trying to get resolution from desktop */
+	if (mode == -2)
+	{
+		if(!ri.GLimp_GetDesktopMode(pwidth, pheight))
+		{
+			R_Printf( PRINT_ALL, " can't detect mode\n" );
+			return rserr_invalid_mode;
+		}
+	}
+
+	R_Printf(PRINT_ALL, " %d %d\n", *pwidth, *pheight);
+
+	if (!ri.GLimp_InitGraphics(fullscreen, pwidth, pheight))
+	{
+		// failed to set a valid mode in windowed mode
+		return rserr_invalid_mode;
+	}
+
+	SWimp_CreateRender();
+
+	return retval;
+}
+
+static void
+SWimp_CreateRender(void)
+{
+	swap_current = 0;
+	swap_buffers = malloc(vid.height * vid.width * sizeof(pixel_t) * 2);
+	if (!swap_buffers)
+	{
+		ri.Sys_Error(ERR_FATAL, "%s: Can't allocate swapbuffer.", __func__);
+		// code never returns after ERR_FATAL
+		return;
+	}
+	swap_frames[0] = swap_buffers;
+	swap_frames[1] = swap_buffers + vid.height * vid.width * sizeof(pixel_t);
+	vid_buffer = swap_frames[swap_current&1];
+	// Need to rewrite whole frame
+	VID_WholeDamageBuffer();
 
 	sintable = malloc((vid.width+CYCLE) * sizeof(int));
 	intsintable = malloc((vid.width+CYCLE) * sizeof(int));
@@ -1919,16 +2264,33 @@ SWimp_InitGraphics(int fullscreen, int *pwidth, int *pheight)
 	newedges = malloc(vid.width * sizeof(edge_t *));
 	removeedges = malloc(vid.width * sizeof(edge_t *));
 
-	// 1 extra for spanpackage that marks end
-	triangle_spans = malloc((vid.width + 1) * sizeof(spanpackage_t));
-
 	warp_rowptr = malloc((vid.width+AMP2*2) * sizeof(byte*));
 	warp_column = malloc((vid.width+AMP2*2) * sizeof(int));
 
-	edge_basespans = malloc((vid.width*2) * sizeof(espan_t));
-	finalverts = malloc((MAXALIASVERTS + 3) * sizeof(finalvert_t));
-	ledges = malloc((NUMSTACKEDGES + 1) * sizeof(edge_t));
-	lsurfs = malloc((NUMSTACKSURFACES + 1) * sizeof(surf_t));
+	// count of "out of items"
+	r_outofsurfaces = false;
+	r_outofedges = false;
+	r_outofverts = false;
+	r_outoftriangles = false;
+	r_outoflights = false;
+	r_outedgebasespans = false;
+	// pointers to allocated buffers
+	finalverts = NULL;
+	r_edges = NULL;
+	lsurfs = NULL;
+	triangle_spans = NULL;
+	blocklights = NULL;
+	edge_basespans = NULL;
+	// curently allocated items
+	r_cnumsurfs = 0;
+	r_numallocatededges = 0;
+	r_numallocatedverts = 0;
+	r_numallocatedtriangles = 0;
+	r_numallocatedlights = 0;
+	r_numallocatededgebasespans = 0;
+
+	R_ReallocateMapBuffers();
+
 	r_warpbuffer = malloc(vid.height * vid.width * sizeof(pixel_t));
 
 	if ((vid.width >= 2048) && (sizeof(shift20_t) == 4)) // 2k+ resolution and 32 == shift20_t
@@ -1946,144 +2308,30 @@ SWimp_InitGraphics(int fullscreen, int *pwidth, int *pheight)
 
 	memset(sw_state.currentpalette, 0, sizeof(sw_state.currentpalette));
 
-	X11_active = true;
-
-	return true;
-}
-
-/*
-** RE_EndFrame
-**
-** This does an implementation specific copy from the backbuffer to the
-** front buffer.  In the Win32 case it uses BitBlt or BltFast depending
-** on whether we're using DIB sections/GDI or DDRAW.
-*/
-
-static void
-RE_EndFrame (void)
-{
-	int y,x, i;
-	const unsigned char *pallete = sw_state.currentpalette;
-	Uint32 pallete_colors[256];
-
-	for(i=0; i < 256; i++)
-	{
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-		pallete_colors[i] = SDL_MapRGB(surface->format,
-					       pallete[i * 4 + 0], // red
-					       pallete[i * 4 + 1], // green
-					       pallete[i * 4 + 2]  //blue
-					);
-#else
-		pallete_colors[i] = SDL_MapRGB(window->format,
-					       pallete[i * 4 + 0], // red
-					       pallete[i * 4 + 1], // green
-					       pallete[i * 4 + 2]  //blue
-					);
-#endif
-	}
-
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-	Uint32 * pixels = (Uint32 *)surface->pixels;
-#else
-	Uint32 * pixels = (Uint32 *)window->pixels;
-#endif
-	for (y=0; y < vid.height;  y++)
-	{
-		for (x=0; x < vid.width; x ++)
-		{
-			int buffer_pos = y * vid.width + x;
-			Uint32 color = pallete_colors[vid_buffer[buffer_pos]];
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-			pixels[y * surface->pitch / sizeof(Uint32) + x] = color;
-#else
-			pixels[y * window->pitch / sizeof(Uint32) + x] = color;
-#endif
-		}
-	}
-
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-	SDL_UpdateTexture(texture, NULL, surface->pixels, surface->pitch);
-	SDL_RenderClear(renderer);
-	SDL_RenderCopy(renderer, texture, NULL, NULL);
-	SDL_RenderPresent(renderer);
-#else
-	/* SDL_Flip(window); */
-	SDL_UpdateRect(window, 0, 0, 0, 0);
-#endif
-}
-
-/*
-** SWimp_SetMode
-*/
-static rserr_t
-SWimp_SetMode(int *pwidth, int *pheight, int mode, int fullscreen )
-{
-	rserr_t retval = rserr_ok;
-
-	R_Printf (PRINT_ALL, "setting mode %d:", mode );
-
-	if ((mode != -1) && !ri.Vid_GetModeInfo( pwidth, pheight, mode ) )
-	{
-		R_Printf( PRINT_ALL, " invalid mode\n" );
-		return rserr_invalid_mode;
-	}
-
-	R_Printf( PRINT_ALL, " %d %d\n", *pwidth, *pheight);
-
-	if ( !SWimp_InitGraphics(fullscreen, pwidth, pheight) ) {
-		// failed to set a valid mode in windowed mode
-		return rserr_invalid_mode;
-	}
-
 	R_GammaCorrectAndSetPalette( ( const unsigned char * ) d_8to24table );
-
-	return retval;
-}
-
-/*
-** SWimp_Shutdown
-**
-** System specific graphics subsystem shutdown routine.  Destroys
-** DIBs or DDRAW surfaces as appropriate.
-*/
-
-static void
-SWimp_Shutdown( void )
-{
-	SWimp_DestroyRender();
-
-	if (SDL_WasInit(SDL_INIT_EVERYTHING) == SDL_INIT_VIDEO)
-		SDL_Quit();
-	else
-		SDL_QuitSubSystem(SDL_INIT_VIDEO);
-
-	X11_active = false;
 }
 
 // this is only here so the functions in q_shared.c and q_shwin.c can link
-void Sys_Error (char *error, ...)
+void
+Sys_Error (char *error, ...)
 {
 	va_list		argptr;
-	char		text[1024];
+	char		text[4096]; // MAXPRINTMSG == 4096
 
-	va_start (argptr, error);
-	vsprintf (text, error, argptr);
-	va_end (argptr);
+	va_start(argptr, error);
+	vsnprintf(text, sizeof(text), error, argptr);
+	va_end(argptr);
 
 	ri.Sys_Error (ERR_FATAL, "%s", text);
 }
 
-void Com_Printf (char *fmt, ...)
+void
+Com_Printf(char *msg, ...)
 {
-	va_list		argptr;
-	char		text[1024];
-
-	va_start (argptr, fmt);
-	vsprintf (text, fmt, argptr);
-	va_end (argptr);
-
-	R_Printf(PRINT_ALL, "%s", text);
+	va_list	argptr;
+	va_start(argptr, msg);
+	ri.Com_VPrintf(PRINT_ALL, msg, argptr);
+	va_end(argptr);
 }
 
 /*
@@ -2104,7 +2352,7 @@ R_ScreenShot_f(void)
 {
 	int x, y;
 	byte *buffer = malloc(vid.width * vid.height * 3);
-	const unsigned char *pallete = sw_state.currentpalette;
+	const unsigned char *palette = sw_state.currentpalette;
 
 	if (!buffer)
 	{
@@ -2116,9 +2364,9 @@ R_ScreenShot_f(void)
 	{
 		for (y=0; y < vid.height; y ++) {
 			int buffer_pos = y * vid.width + x;
-			buffer[buffer_pos * 3 + 0] = pallete[vid_buffer[buffer_pos] * 4 + 0]; // red
-			buffer[buffer_pos * 3 + 1] = pallete[vid_buffer[buffer_pos] * 4 + 1]; // green
-			buffer[buffer_pos * 3 + 2] = pallete[vid_buffer[buffer_pos] * 4 + 2]; // blue
+			buffer[buffer_pos * 3 + 0] = palette[vid_buffer[buffer_pos] * 4 + 2]; // red
+			buffer[buffer_pos * 3 + 1] = palette[vid_buffer[buffer_pos] * 4 + 1]; // green
+			buffer[buffer_pos * 3 + 2] = palette[vid_buffer[buffer_pos] * 4 + 0]; // blue
 		}
 	}
 

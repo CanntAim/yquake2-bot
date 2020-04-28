@@ -25,7 +25,7 @@
  */
 
 #include "header/client.h"
-#include "../backends/generic/header/input.h"
+#include "input/header/input.h"
 
 /* development tools for weapons */
 int gun_frame;
@@ -183,8 +183,8 @@ V_TestEntities(void)
 	{
 		ent = &r_entities[i];
 
-		r = 64 * ((i % 4) - 1.5);
-		f = 64 * (i / 4) + 128;
+		r = 64.0f * ((float)(i % 4) - 1.5f);
+		f = (float)(64 * (i / 4) + 128);
 
 		for (j = 0; j < 3; j++)
 		{
@@ -236,7 +236,7 @@ V_TestLights(void)
 void
 CL_PrepRefresh(void)
 {
-	char mapname[32];
+	char mapname[MAX_QPATH];
 	int i;
 	char name[MAX_QPATH];
 	float rotate;
@@ -361,35 +361,10 @@ CL_PrepRefresh(void)
 	cl.refresh_prepped = true;
 	cl.force_refdef = true; /* make sure we have a valid refdef */
 
-#if defined(OGG) || defined(CDA)
-
+	/* start the cd track */
 	int track = (int)strtol(cl.configstrings[CS_CDTRACK], (char **)NULL, 10);
 
-	/* start the cd track */
-	if (Cvar_VariableValue("cd_shuffle"))
-	{
-#ifdef CDA
-		CDAudio_RandomPlay();
-#endif
-
-#ifdef OGG
-		OGG_PlayTrack(track);
-#endif
-	}
-	else
-	{
- #ifdef CDA
-		CDAudio_Play(track, (char **)NULL, 10), true);
- #endif
-
- #ifdef OGG
-
-		OGG_PlayTrack(track);
-
- #endif
-	}
-
-#endif
+	OGG_PlayTrack(track);
 }
 
 float
@@ -459,8 +434,7 @@ entitycmpfnc(const entity_t *a, const entity_t *b)
 	}
 	else
 	{
- 		return (a->model == b->model) ? 0 :
-			(a->model > b->model) ? 1 : -1;
+		return (a->model > b->model) ? 1 : -1;
 	}
 }
 
@@ -603,8 +577,10 @@ V_RenderView(float stereo_separation)
 	cl.refdef.fov_y = CalcFov(cl.refdef.fov_x, (float)cl.refdef.width,
 				(float)cl.refdef.height);
 
-	//	R_RenderFrame(&cl.refdef);
-
+        if (GymRender()) {
+	        R_RenderFrame(&cl.refdef);
+        }
+	
 	if (cl_stats->value)
 	{
 		Com_Printf("ent:%i  lt:%i  part:%i\n", r_numentities,
@@ -621,7 +597,7 @@ V_RenderView(float stereo_separation)
 	SCR_AddDirtyPoint(scr_vrect.x + scr_vrect.width - 1,
 			scr_vrect.y + scr_vrect.height - 1);
 
-	//	SCR_DrawCrosshair();
+	SCR_DrawCrosshair();
 
 	GymCaptureCurrentPlayerViewStateCL(cl.refdef, cl.frame.playerstate);
 }
@@ -675,9 +651,11 @@ V_Render3dCrosshair(void)
 void
 V_Viewpos_f(void)
 {
-	Com_Printf("(%i %i %i) : %i\n", (int)cl.refdef.vieworg[0],
-			(int)cl.refdef.vieworg[1], (int)cl.refdef.vieworg[2],
-			(int)cl.refdef.viewangles[YAW]);
+	Com_Printf("position: %i %i %i, angles: %i %i %i\n",
+			(int)cl.refdef.vieworg[0], (int)cl.refdef.vieworg[1],
+			(int)cl.refdef.vieworg[2],
+			(int)cl.refdef.viewangles[PITCH], (int)cl.refdef.viewangles[YAW],
+			(int)cl.refdef.viewangles[ROLL]);
 }
 
 void

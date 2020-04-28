@@ -17,7 +17,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-// r_alias.c: routines for setting up to draw alias models
+// sw_alias.c: routines for setting up to draw alias models
 
 /*
 ** use a real variable to control lerping
@@ -53,13 +53,13 @@ static vec3_t	s_alias_forward, s_alias_right, s_alias_up;
 
 #define NUMVERTEXNORMALS	162
 
-static float	r_avertexnormals[NUMVERTEXNORMALS][3] = {
+static const float	r_avertexnormals[NUMVERTEXNORMALS][3] = {
 #include "../constants/anorms.h"
 };
 
 
-static void R_AliasTransformVector(vec3_t in, vec3_t out, float m[3][4]);
-static void R_AliasTransformFinalVerts(int numpoints, finalvert_t *fv, dtrivertx_t *oldv, dtrivertx_t *newv );
+static void R_AliasTransformVector(const vec3_t in, vec3_t out, const float xf[3][4]);
+static void R_AliasTransformFinalVerts(const entity_t *currententity, int numpoints, finalvert_t *fv, dtrivertx_t *oldv, dtrivertx_t *newv );
 
 void R_AliasProjectAndClipTestFinalVert(finalvert_t *fv);
 
@@ -83,12 +83,13 @@ R_AliasCheckBBox
 static unsigned long
 R_AliasCheckFrameBBox( daliasframe_t *frame, float worldxf[3][4] )
 {
+	// FIXME: should this really be using long and not int32_t or sth?
 	unsigned long aggregate_and_clipcode = ~0U,
 		          aggregate_or_clipcode = 0;
 	int           i;
 	vec3_t        mins, maxs;
 	vec3_t        transformed_min, transformed_max;
-	qboolean      zclipped = false, zfullyclipped = true;
+	qboolean      zfullyclipped = true;
 
 	/*
 	** get the exact frame bounding box
@@ -113,10 +114,6 @@ R_AliasCheckFrameBBox( daliasframe_t *frame, float worldxf[3][4] )
 	if ( zfullyclipped )
 	{
 		return BBOX_TRIVIAL_REJECT;
-	}
-	if ( zclipped )
-	{
-		return ( BBOX_MUST_CLIP_XY | BBOX_MUST_CLIP_Z );
 	}
 
 	/*
@@ -170,7 +167,7 @@ R_AliasCheckFrameBBox( daliasframe_t *frame, float worldxf[3][4] )
 }
 
 static int
-R_AliasCheckBBox (void)
+R_AliasCheckBBox (const entity_t *currententity)
 {
 	unsigned long ccodes[2] = { 0, 0 };
 
@@ -206,7 +203,7 @@ R_AliasTransformVector
 ================
 */
 static void
-R_AliasTransformVector(vec3_t in, vec3_t out, float xf[3][4] )
+R_AliasTransformVector(const vec3_t in, vec3_t out, const float xf[3][4] )
 {
 	out[0] = DotProduct(in, xf[0]) + xf[0][3];
 	out[1] = DotProduct(in, xf[1]) + xf[1][3];
@@ -221,38 +218,27 @@ R_AliasPreparePoints
 General clipped case
 ================
 */
-typedef struct
-{
-	int          num_points;
-	dtrivertx_t *last_verts; // verts from the last frame
-	dtrivertx_t *this_verts; // verts from this frame
-	finalvert_t *dest_verts; // destination for transformed verts
-} aliasbatchedtransformdata_t;
-
-static aliasbatchedtransformdata_t aliasbatchedtransformdata;
-finalvert_t	*finalverts;
 
 static void
-R_AliasPreparePoints (void)
+R_AliasPreparePoints (const entity_t *currententity, finalvert_t *verts, const finalvert_t *verts_max)
 {
-	int			i;
+	int		i;
 	dstvert_t	*pstverts;
 	dtriangle_t	*ptri;
 	finalvert_t	*pfv[3];
-	finalvert_t	*pfinalverts;
 
-	// put work vertexes on stack, cache aligned
-	pfinalverts = finalverts;
+	if ((verts + s_pmdl->num_xyz) >= verts_max)
+	{
+		r_outofverts = true;
+		return;
+	}
 
-	aliasbatchedtransformdata.num_points = s_pmdl->num_xyz;
-	aliasbatchedtransformdata.last_verts = r_lastframe->verts;
-	aliasbatchedtransformdata.this_verts = r_thisframe->verts;
-	aliasbatchedtransformdata.dest_verts = pfinalverts;
-
-	R_AliasTransformFinalVerts( aliasbatchedtransformdata.num_points,
-		                        aliasbatchedtransformdata.dest_verts,
-								aliasbatchedtransformdata.last_verts,
-								aliasbatchedtransformdata.this_verts );
+	R_AliasTransformFinalVerts(currententity,
+				   s_pmdl->num_xyz,
+				   verts,	// destination for transformed verts
+				   r_lastframe->verts,	// verts from the last frame
+				   r_thisframe->verts	// verts from this frame
+				);
 
 	// clip and draw all triangles
 	//
@@ -263,9 +249,9 @@ R_AliasPreparePoints (void)
 	{
 		for (i=0 ; i<s_pmdl->num_tris ; i++, ptri++)
 		{
-			pfv[0] = &pfinalverts[ptri->index_xyz[0]];
-			pfv[1] = &pfinalverts[ptri->index_xyz[1]];
-			pfv[2] = &pfinalverts[ptri->index_xyz[2]];
+			pfv[0] = &verts[ptri->index_xyz[0]];
+			pfv[1] = &verts[ptri->index_xyz[1]];
+			pfv[2] = &verts[ptri->index_xyz[2]];
 
 			if ( pfv[0]->flags & pfv[1]->flags & pfv[2]->flags )
 				continue;	// completely clipped
@@ -281,16 +267,13 @@ R_AliasPreparePoints (void)
 			pfv[2]->t = pstverts[ptri->index_st[2]].t << SHIFT16XYZ;
 
 			if ( ! (pfv[0]->flags | pfv[1]->flags | pfv[2]->flags) )
-			{	// totally unclipped
-				aliastriangleparms.a = pfv[2];
-				aliastriangleparms.b = pfv[1];
-				aliastriangleparms.c = pfv[0];
-
-				R_DrawTriangle();
+			{
+				// totally unclipped
+				R_DrawTriangle(currententity, pfv[2], pfv[1], pfv[0]);
 			}
 			else
 			{
-				R_AliasClipTriangle (pfv[2], pfv[1], pfv[0]);
+				R_AliasClipTriangle(currententity, pfv[2], pfv[1], pfv[0]);
 			}
 		}
 	}
@@ -298,9 +281,9 @@ R_AliasPreparePoints (void)
 	{
 		for (i=0 ; i<s_pmdl->num_tris ; i++, ptri++)
 		{
-			pfv[0] = &pfinalverts[ptri->index_xyz[0]];
-			pfv[1] = &pfinalverts[ptri->index_xyz[1]];
-			pfv[2] = &pfinalverts[ptri->index_xyz[2]];
+			pfv[0] = &verts[ptri->index_xyz[0]];
+			pfv[1] = &verts[ptri->index_xyz[1]];
+			pfv[2] = &verts[ptri->index_xyz[2]];
 
 			if ( pfv[0]->flags & pfv[1]->flags & pfv[2]->flags )
 				continue;	// completely clipped
@@ -316,16 +299,13 @@ R_AliasPreparePoints (void)
 			pfv[2]->t = pstverts[ptri->index_st[2]].t << SHIFT16XYZ;
 
 			if ( ! (pfv[0]->flags | pfv[1]->flags | pfv[2]->flags) )
-			{	// totally unclipped
-				aliastriangleparms.a = pfv[0];
-				aliastriangleparms.b = pfv[1];
-				aliastriangleparms.c = pfv[2];
-
-				R_DrawTriangle();
+			{
+				// totally unclipped
+				R_DrawTriangle(currententity, pfv[0], pfv[1], pfv[2]);
 			}
 			else
 			{	// partially clipped
-				R_AliasClipTriangle (pfv[0], pfv[1], pfv[2]);
+				R_AliasClipTriangle(currententity, pfv[0], pfv[1], pfv[2]);
 			}
 		}
 	}
@@ -338,20 +318,17 @@ R_AliasSetUpTransform
 ================
 */
 static void
-R_AliasSetUpTransform (void)
+R_AliasSetUpTransform(const entity_t *currententity)
 {
 	int				i;
 	static float	viewmatrix[3][4];
-	vec3_t			angles;
 
 	// TODO: should really be stored with the entity instead of being reconstructed
 	// TODO: should use a look-up table
 	// TODO: could cache lazily, stored in the entity
 	//
-	angles[ROLL] = currententity->angles[ROLL];
-	angles[PITCH] = currententity->angles[PITCH];
-	angles[YAW] = currententity->angles[YAW];
-	AngleVectors( angles, s_alias_forward, s_alias_right, s_alias_up );
+	// AngleVectors never change angles, we can convert from const
+	AngleVectors((float *)currententity->angles, s_alias_forward, s_alias_right, s_alias_up );
 
 	// TODO: can do this with simple matrix rearrangement
 	memset( aliasworldtransform, 0, sizeof( aliasworldtransform ) );
@@ -383,9 +360,18 @@ R_AliasSetUpTransform (void)
 	VectorInverse (viewmatrix[1]);
 	VectorCopy (vpn, viewmatrix[2]);
 
-	viewmatrix[0][3] = 0;
-	viewmatrix[1][3] = 0;
-	viewmatrix[2][3] = 0;
+	if ( currententity->flags & RF_WEAPONMODEL )
+	{
+		viewmatrix[0][3] = 0;
+		viewmatrix[1][3] = 0;
+		viewmatrix[2][3] = 8;
+	}
+	else
+	{
+		viewmatrix[0][3] = 0;
+		viewmatrix[1][3] = 0;
+		viewmatrix[2][3] = 0;
+	}
 
 	// memcpy( aliasworldtransform, rotationmatrix, sizeof( aliastransform ) );
 
@@ -407,14 +393,15 @@ R_AliasTransformFinalVerts
 ================
 */
 static void
-R_AliasTransformFinalVerts( int numpoints, finalvert_t *fv, dtrivertx_t *oldv, dtrivertx_t *newv )
+R_AliasTransformFinalVerts(const entity_t *currententity, int numpoints, finalvert_t *fv, dtrivertx_t *oldv, dtrivertx_t *newv )
 {
 	int i;
 
 	for ( i = 0; i < numpoints; i++, fv++, oldv++, newv++ )
 	{
 		int		temp;
-		float	lightcos, *plightnormal;
+		float	lightcos;
+		const float	*plightnormal;
 		vec3_t  lerped_vert;
 
 		lerped_vert[0] = r_lerp_move[0] + oldv->v[0]*r_lerp_backv[0] + newv->v[0]*r_lerp_frontv[0];
@@ -423,7 +410,7 @@ R_AliasTransformFinalVerts( int numpoints, finalvert_t *fv, dtrivertx_t *oldv, d
 
 		plightnormal = r_avertexnormals[newv->lightnormalindex];
 
-		// PMM - added double damage shell
+		// added double damage shell
 		if ( currententity->flags & ( RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE | RF_SHELL_DOUBLE | RF_SHELL_HALF_DAM) )
 		{
 			lerped_vert[0] += plightnormal[0] * POWERSUIT_SCALE;
@@ -462,6 +449,7 @@ R_AliasTransformFinalVerts( int numpoints, finalvert_t *fv, dtrivertx_t *oldv, d
 			R_AliasProjectAndClipTestFinalVert( fv );
 		}
 	}
+
 }
 
 /*
@@ -469,7 +457,8 @@ R_AliasTransformFinalVerts( int numpoints, finalvert_t *fv, dtrivertx_t *oldv, d
 R_AliasProjectAndClipTestFinalVert
 ================
 */
-void R_AliasProjectAndClipTestFinalVert( finalvert_t *fv )
+void
+R_AliasProjectAndClipTestFinalVert( finalvert_t *fv )
 {
 	float	zi;
 	float	x, y, z;
@@ -500,7 +489,8 @@ void R_AliasProjectAndClipTestFinalVert( finalvert_t *fv )
 R_AliasSetupSkin
 ===============
 */
-static qboolean R_AliasSetupSkin (void)
+static qboolean
+R_AliasSetupSkin(const entity_t *currententity, const model_t *currentmodel)
 {
 	image_t *pskindesc;
 
@@ -513,8 +503,8 @@ static qboolean R_AliasSetupSkin (void)
 		skinnum = currententity->skinnum;
 		if ((skinnum >= s_pmdl->num_skins) || (skinnum < 0))
 		{
-			R_Printf(PRINT_ALL, "R_AliasSetupSkin %s: no such skin # %d\n",
-				currentmodel->name, skinnum);
+			R_Printf(PRINT_ALL, "%s %s: no such skin # %d\n",
+				__func__, currentmodel->name, skinnum);
 			skinnum = 0;
 		}
 
@@ -542,7 +532,7 @@ R_AliasSetupLighting
 ================
 */
 static void
-R_AliasSetupLighting (void)
+R_AliasSetupLighting(entity_t *currententity)
 {
 	alight_t lighting;
 	float lightvec[3] = {-1, 0, 0};
@@ -557,7 +547,7 @@ R_AliasSetupLighting (void)
 	}
 	else
 	{
-		R_LightPoint (currententity->origin, light);
+		R_LightPoint (currententity, currententity->origin, light);
 	}
 
 	// save off light value for server to look at (BIG HACK!)
@@ -610,9 +600,6 @@ R_AliasSetupLighting (void)
 
 	r_ambientlight = (255 - r_ambientlight) << VID_CBITS;
 
-	if (r_ambientlight < LIGHT_MIN)
-		r_ambientlight = LIGHT_MIN;
-
 	r_shadelight = lighting.shadelight;
 
 	if (r_shadelight < 0)
@@ -634,21 +621,21 @@ R_AliasSetupFrames
 =================
 */
 static void
-R_AliasSetupFrames( dmdl_t *pmdl )
+R_AliasSetupFrames(const entity_t *currententity, const model_t *currentmodel, dmdl_t *pmdl)
 {
 	int thisframe = currententity->frame;
 	int lastframe = currententity->oldframe;
 
 	if ( ( thisframe >= pmdl->num_frames ) || ( thisframe < 0 ) )
 	{
-		R_Printf(PRINT_ALL, "R_AliasSetupFrames %s: no such thisframe %d\n",
-			currentmodel->name, thisframe);
+		R_Printf(PRINT_ALL, "%s %s: no such thisframe %d\n",
+			__func__, currentmodel->name, thisframe);
 		thisframe = 0;
 	}
 	if ( ( lastframe >= pmdl->num_frames ) || ( lastframe < 0 ) )
 	{
-		R_Printf(PRINT_ALL, "R_AliasSetupFrames %s: no such lastframe %d\n",
-			currentmodel->name, lastframe);
+		R_Printf(PRINT_ALL, "%s %s: no such lastframe %d\n",
+			__func__, currentmodel->name, lastframe);
 		lastframe = 0;
 	}
 
@@ -665,7 +652,7 @@ R_AliasSetupFrames( dmdl_t *pmdl )
 ** Precomputes lerp coefficients used for the whole frame.
 */
 static void
-R_AliasSetUpLerpData( dmdl_t *pmdl, float backlerp )
+R_AliasSetUpLerpData(entity_t *currententity, dmdl_t *pmdl, float backlerp)
 {
 	float	frontlerp;
 	vec3_t	translation, vectors[3];
@@ -704,20 +691,23 @@ R_AliasSetUpLerpData( dmdl_t *pmdl, float backlerp )
 	}
 }
 
+finalvert_t *finalverts = NULL, *finalverts_max = NULL;
+
+extern void (*d_pdrawspans)(const entity_t *currententity, spanpackage_t *pspanpackage);
+void R_PolysetDrawSpans8_Opaque(const entity_t *currententity, spanpackage_t *pspanpackage);
+void R_PolysetDrawSpans8_33(const entity_t *currententity, spanpackage_t *pspanpackage);
+void R_PolysetDrawSpans8_66(const entity_t *currententity, spanpackage_t *pspanpackage);
+void R_PolysetDrawSpansConstant8_33(const entity_t *currententity, spanpackage_t *pspanpackage);
+void R_PolysetDrawSpansConstant8_66(const entity_t *currententity, spanpackage_t *pspanpackage);
+
 /*
 ================
 R_AliasDrawModel
 ================
 */
-void R_AliasDrawModel (void)
+void
+R_AliasDrawModel(entity_t *currententity, const model_t *currentmodel)
 {
-	extern void (*d_pdrawspans)(void *);
-	extern void R_PolysetDrawSpans8_Opaque( void * );
-	extern void R_PolysetDrawSpans8_33( void * );
-	extern void R_PolysetDrawSpans8_66( void * );
-	extern void R_PolysetDrawSpansConstant8_33( void * );
-	extern void R_PolysetDrawSpansConstant8_66( void * );
-
 	s_pmdl = (dmdl_t *)currentmodel->extradata;
 
 	if ( r_lerpmodels->value == 0 )
@@ -733,8 +723,8 @@ void R_AliasDrawModel (void)
 			return;
 		}
 
-		float fov = 2.0*tan(r_gunfov->value*((4.0/3.0)*M_PI/360.0));
-		aliasxscale = ((float)r_refdef.vrect.width / fov) * r_aliasuvscale;
+		float gunfov = 2 * tan((float)r_gunfov->value / 360 * M_PI);
+		aliasxscale = ((float)r_refdef.vrect.width / gunfov) * r_aliasuvscale;
 		aliasyscale = aliasxscale;
 
 		if ( r_lefthand->value == 1.0F )
@@ -745,12 +735,12 @@ void R_AliasDrawModel (void)
 	** we have to set our frame pointers and transformations before
 	** doing any real work
 	*/
-	R_AliasSetupFrames( s_pmdl );
-	R_AliasSetUpTransform();
+	R_AliasSetupFrames(currententity, currentmodel, s_pmdl);
+	R_AliasSetUpTransform(currententity);
 
 	// see if the bounding box lets us trivially reject, also sets
 	// trivial accept status
-	if ( R_AliasCheckBBox() == BBOX_TRIVIAL_REJECT )
+	if ( R_AliasCheckBBox(currententity) == BBOX_TRIVIAL_REJECT )
 	{
 		if ( currententity->flags & RF_WEAPONMODEL )
 		{
@@ -761,7 +751,7 @@ void R_AliasDrawModel (void)
 	}
 
 	// set up the skin and verify it exists
-	if ( !R_AliasSetupSkin () )
+	if ( !R_AliasSetupSkin(currententity, currentmodel) )
 	{
 		R_Printf( PRINT_ALL, "R_AliasDrawModel %s: NULL skin found\n",
 			currentmodel->name);
@@ -771,21 +761,21 @@ void R_AliasDrawModel (void)
 	}
 
 	r_amodels_drawn++;
-	R_AliasSetupLighting ();
+	R_AliasSetupLighting(currententity);
 
 	/*
 	** select the proper span routine based on translucency
 	*/
-	// PMM - added double damage shell
-	// PMM - reordered to handle blending
+	// added double damage shell
+	// reordered to handle blending
 	if ( currententity->flags & ( RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE | RF_SHELL_DOUBLE | RF_SHELL_HALF_DAM) )
 	{
 		int		color;
 
-		// PMM - added double
+		// added double
 		color = currententity->flags & ( RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE | RF_SHELL_DOUBLE | RF_SHELL_HALF_DAM);
-		// PMM - reordered, new shells after old shells (so they get overriden)
 
+		// reordered, new shells after old shells (so they get overriden)
 		if ( color == RF_SHELL_RED )
 			r_aliasblendcolor = SHELL_RED_COLOR;
 		else if ( color == RF_SHELL_GREEN )
@@ -798,40 +788,13 @@ void R_AliasDrawModel (void)
 			r_aliasblendcolor = SHELL_RB_COLOR;
 		else if ( color == (RF_SHELL_BLUE | RF_SHELL_GREEN) )
 			r_aliasblendcolor = SHELL_BG_COLOR;
-		// PMM - added this .. it's yellowish
+		// added this .. it's yellowish
 		else if ( color == (RF_SHELL_DOUBLE) )
 			r_aliasblendcolor = SHELL_DOUBLE_COLOR;
 		else if ( color == (RF_SHELL_HALF_DAM) )
 			r_aliasblendcolor = SHELL_HALF_DAM_COLOR;
-		// pmm
 		else
 			r_aliasblendcolor = SHELL_WHITE_COLOR;
-		/*
-		if ( color & RF_SHELL_RED )
-		{
-			if ( ( color & RF_SHELL_BLUE) && ( color & RF_SHELL_GREEN) )
-				r_aliasblendcolor = SHELL_WHITE_COLOR;
-			else if ( color & (RF_SHELL_BLUE | RF_SHELL_DOUBLE))
-				r_aliasblendcolor = SHELL_RB_COLOR;
-			else
-				r_aliasblendcolor = SHELL_RED_COLOR;
-		}
-		else if ( color & RF_SHELL_BLUE)
-		{
-			if ( color & RF_SHELL_DOUBLE )
-				r_aliasblendcolor = SHELL_CYAN_COLOR;
-			else
-				r_aliasblendcolor = SHELL_BLUE_COLOR;
-		}
-		else if ( color & (RF_SHELL_DOUBLE) )
-			r_aliasblendcolor = SHELL_DOUBLE_COLOR;
-		else if ( color & (RF_SHELL_HALF_DAM) )
-			r_aliasblendcolor = SHELL_HALF_DAM_COLOR;
-		else if ( color & RF_SHELL_GREEN )
-			r_aliasblendcolor = SHELL_GREEN_COLOR;
-		else
-			r_aliasblendcolor = SHELL_WHITE_COLOR;
-		*/
 
 		if ( currententity->alpha > 0.33 )
 			d_pdrawspans = R_PolysetDrawSpansConstant8_66;
@@ -855,14 +818,14 @@ void R_AliasDrawModel (void)
 	/*
 	** compute this_frame and old_frame addresses
 	*/
-	R_AliasSetUpLerpData( s_pmdl, currententity->backlerp );
+	R_AliasSetUpLerpData(currententity, s_pmdl, currententity->backlerp);
 
 	if (currententity->flags & RF_DEPTHHACK)
 		s_ziscale = (float)0x8000 * (float)SHIFT16XYZ_MULT * 3.0;
 	else
 		s_ziscale = (float)0x8000 * (float)SHIFT16XYZ_MULT;
 
-	R_AliasPreparePoints ();
+	R_AliasPreparePoints(currententity, finalverts, finalverts_max);
 
 	if ( currententity->flags & RF_WEAPONMODEL )
 	{

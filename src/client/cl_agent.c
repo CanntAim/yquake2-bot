@@ -26,11 +26,12 @@
 
 #include "header/client.h"
 
+qboolean Render = false;
 qboolean Ready = false;
-qboolean OpenSocket = false;
-qboolean SilentSoundCapture = false;
-qboolean SilentPlayerStateCapture = false;
-qboolean SilentEntityCapture = false;
+qboolean OpenSocket = false; 
+qboolean SilentSoundCapture = true;
+qboolean SilentPlayerStateCapture = true;
+qboolean SilentEntityCapture = true;
 message_t Message;
 
 int connfd, conncl, connrc;
@@ -62,20 +63,20 @@ void
 GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float fraglimit,
 	    float maxclients, char hostname[1024])
 {
-    Cvar_SetValue("maxclients", maxclients);
-    Cvar_SetValue("timelimit", timelimit);
-    Cvar_SetValue("fraglimit", fraglimit);
-    Cvar_Set("hostname", hostname);
+  Cvar_SetValue("maxclients", maxclients);
+  Cvar_SetValue("timelimit", timelimit);
+  Cvar_SetValue("fraglimit", fraglimit);
+  Cvar_Set("hostname", hostname);
 
-    Cvar_SetValue("deathmatch", 1); /* deathmatch is always true for rogue games */
+  Cvar_SetValue("deathmatch", 1); /* deathmatch is always true for rogue games */
 
-    if (Com_ServerState())
-    {
-        Cbuf_AddText("disconnect\n");
-    }
+  if (Com_ServerState())
+  {
+    Cbuf_AddText("disconnect\n");
+  }
 
-    Cbuf_AddText(va("map %s\n", startmap));
-    Cbuf_AddText("timescale 100\n");
+  Cbuf_AddText(va("map %s\n", startmap));
+  Cbuf_AddText("timescale 100\n");
 }
 
 void
@@ -93,6 +94,11 @@ GymStartServer(){
     GymInitializeMessage();
     OpenSocket = true;
   }
+}
+
+qboolean
+GymRender(){
+  return Render;
 }
 
 void*
@@ -133,6 +139,11 @@ GymOpenSocket(void *args){
 	char *purpose = strtok(buf, ",");
 	char *map = strtok(NULL, ",");
 	char *address = strtok(NULL, ",");
+	char *render = strtok(NULL, ",");
+
+	if (strcmp("y", render) == 0) {
+	  Render = true;
+	}
 
 	if (strcmp("start server", purpose) == 0) {
 	  GymStartGameServerAndSetRules(map, 10.0, 0.0, 2.0, address);
@@ -326,6 +337,13 @@ GymCheckDistanceTo(float source[3], float dest[3])
   difference[1] = dest[1] - source[1];
   difference[2] = dest[2] - source[2];
   return powf(powf(difference[0],2) + powf(difference[1],2) + powf(difference[2],2), .5);
+}
+
+
+void
+GymDisplayFPS(float fps)
+{
+  printf("frame rate: %f\n", fps);
 }
 
 void

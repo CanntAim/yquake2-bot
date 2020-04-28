@@ -35,8 +35,8 @@
 #ifdef USE_OPENAL
 
 #include "../header/client.h"
-#include "../../backends/generic/header/qal.h"
 #include "header/local.h"
+#include "header/qal.h"
 #include "header/vorbis.h"
 
 /* translates from AL coordinate system to quake */
@@ -623,6 +623,15 @@ AL_Update(void)
 
 	paintedtime = cls.realtime;
 
+	/* Do nothing if we aren't connected to a output device.
+	   This is called after increasing paintedtime, because
+	   the sound for the current frame needs to be skipped.
+	   Otherwise sound and game will become asynchronous and
+	   the paint buffer may overflow. */
+	if (!QAL_RecoverLostDevice()) {
+         return;
+	}
+
 	/* set listener (player) parameters */
 	AL_CopyVector(listener_forward, orientation);
 	AL_CopyVector(listener_up, orientation + 3);
@@ -684,9 +693,7 @@ AL_Update(void)
 	AL_AddLoopSounds();
 
 	/* add music */
-#ifdef OGG
 	OGG_Stream();
-#endif
 
 	AL_StreamUpdate();
 	AL_IssuePlaysounds();

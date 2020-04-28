@@ -24,16 +24,22 @@ if __name__ == '__main__':
                         default="bottrain")
     parser.add_argument("--episodes", help="number of episodes.", \
                         default="10")
+    parser.add_argument("--timescale", help="game time scale.", \
+                        default="1")
+    parser.add_argument("--render", help="whether to run headless.", \
+                        default="n")
     args = parser.parse_args()
     env = None
     if args.host == "y":
         env = q2.DuelEnv(args.socket, args.path, \
                          args.address, None, \
-                         args.level, True, 0)
+                         args.level, True,
+                         args.timescale, args.render)
     else:
         env = q2.DuelEnv(args.socket, args.path, \
                          args.address, args.port, \
-                         None, False, 0)
+                         None, False, \
+                         args.timescale, args.render)
     env.seed(123)
     agent = Agent(env._action_space())
 

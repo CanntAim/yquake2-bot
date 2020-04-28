@@ -17,14 +17,13 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-// r_bsp.c
+// sw_bsp.c
 
 #include "header/local.h"
 
 //
 // current entity info
 //
-entity_t	*currententity;
 vec3_t		modelorg;	// modelorg is the viewpoint reletive to
 				// the currently rendering entity
 vec3_t		r_entorigin;	// the currently rendering entity in world
@@ -32,23 +31,14 @@ vec3_t		r_entorigin;	// the currently rendering entity in world
 
 static float	entity_rotation[3][3];
 
-int		r_currentbkey;
-
 typedef enum {touchessolid, drawnode, nodrawnode} solidstate_t;
 
 #define MAX_BMODEL_VERTS	500	// 6K
 #define MAX_BMODEL_EDGES	1000	// 12K
 
-static mvertex_t	*pbverts;
-static bedge_t		*pbedges;
 static int		numbverts, numbedges;
 static mvertex_t	bverts[MAX_BMODEL_VERTS];
 static bedge_t		bedges[MAX_BMODEL_EDGES];
-
-static mvertex_t	*pfrontenter, *pfrontexit;
-
-static qboolean		makeclippededge;
-
 
 //===========================================================================
 
@@ -74,7 +64,8 @@ R_EntityRotate (vec3_t vec)
 R_RotateBmodel
 ================
 */
-void R_RotateBmodel (void)
+void
+R_RotateBmodel(const entity_t *currententity)
 {
 	float	angle, s, c, temp1[3][3], temp2[3][3], temp3[3][3];
 
@@ -148,6 +139,24 @@ void R_RotateBmodel (void)
 }
 
 
+static qboolean
+R_AreaVisible(mleaf_t *pleaf)
+{
+	int area;
+
+	// check for door connected areas
+	if (!r_newrefdef.areabits)
+		return true;
+
+	area = pleaf->area;
+
+	if ((r_newrefdef.areabits[area>>3] & (1<<(area&7))))
+		return true;
+
+	return false; // not visible
+}
+
+
 /*
 ================
 R_RecursiveClipBPoly
@@ -156,15 +165,15 @@ Clip a bmodel poly down the world bsp tree
 ================
 */
 static void
-R_RecursiveClipBPoly (bedge_t *pedges, mnode_t *pnode, msurface_t *psurf)
+R_RecursiveClipBPoly(entity_t *currententity, bedge_t *pedges, mnode_t *pnode, msurface_t *psurf)
 {
 	bedge_t		*psideedges[2], *pnextedge, *ptedge;
 	int		i, side, lastside;
-	float		frac;
 	mplane_t	*splitplane, tplane;
 	mvertex_t	*pvert, *plastvert, *ptvert;
 	mnode_t		*pn;
-	int			area;
+	qboolean	makeclippededge;
+	mvertex_t	*pfrontenter = bverts, *pfrontexit = bverts;
 
 	psideedges[0] = psideedges[1] = NULL;
 
@@ -208,13 +217,15 @@ R_RecursiveClipBPoly (bedge_t *pedges, mnode_t *pnode, msurface_t *psurf)
 
 		if (side != lastside)
 		{
+			float	frac;
+
 			// clipped
 			if (numbverts >= MAX_BMODEL_VERTS)
 				return;
 
 			// generate the clipped vertex
 			frac = lastdist / (lastdist - dist);
-			ptvert = &pbverts[numbverts++];
+			ptvert = &bverts[numbverts++];
 			ptvert->position[0] = plastvert->position[0] +
 					frac * (pvert->position[0] -
 					plastvert->position[0]);
@@ -228,37 +239,34 @@ R_RecursiveClipBPoly (bedge_t *pedges, mnode_t *pnode, msurface_t *psurf)
 			// split into two edges, one on each side, and remember entering
 			// and exiting points
 			// FIXME: share the clip edge by having a winding direction flag?
-			if (numbedges >= (MAX_BMODEL_EDGES - 1))
-			{
-				R_Printf(PRINT_ALL,"Out of edges for bmodel\n");
-				return;
-			}
-
-			ptedge = &pbedges[numbedges];
+			ptedge = &bedges[numbedges++];
 			ptedge->pnext = psideedges[lastside];
 			psideedges[lastside] = ptedge;
 			ptedge->v[0] = plastvert;
 			ptedge->v[1] = ptvert;
 
-			ptedge = &pbedges[numbedges + 1];
+			ptedge = &bedges[numbedges++];
 			ptedge->pnext = psideedges[side];
 			psideedges[side] = ptedge;
 			ptedge->v[0] = ptvert;
 			ptedge->v[1] = pvert;
 
-			numbedges += 2;
+			if (numbedges >= MAX_BMODEL_EDGES)
+			{
+				R_Printf(PRINT_ALL,"Out of edges for bmodel\n");
+				return;
+			}
 
 			if (side == 0)
 			{
 				// entering for front, exiting for back
 				pfrontenter = ptvert;
-				makeclippededge = true;
 			}
 			else
 			{
 				pfrontexit = ptvert;
-				makeclippededge = true;
 			}
+			makeclippededge = true;
 		}
 		else
 		{
@@ -270,27 +278,25 @@ R_RecursiveClipBPoly (bedge_t *pedges, mnode_t *pnode, msurface_t *psurf)
 
 	// if anything was clipped, reconstitute and add the edges along the clip
 	// plane to both sides (but in opposite directions)
-	if (makeclippededge)
+	if (makeclippededge && pfrontexit != pfrontenter)
 	{
-		if (numbedges >= (MAX_BMODEL_EDGES - 2))
-		{
-			R_Printf(PRINT_ALL,"Out of edges for bmodel\n");
-			return;
-		}
-
-		ptedge = &pbedges[numbedges];
+		ptedge = &bedges[numbedges++];
 		ptedge->pnext = psideedges[0];
 		psideedges[0] = ptedge;
 		ptedge->v[0] = pfrontexit;
 		ptedge->v[1] = pfrontenter;
 
-		ptedge = &pbedges[numbedges + 1];
+		ptedge = &bedges[numbedges++];
 		ptedge->pnext = psideedges[1];
 		psideedges[1] = ptedge;
 		ptedge->v[0] = pfrontenter;
 		ptedge->v[1] = pfrontexit;
 
-		numbedges += 2;
+		if (numbedges >= MAX_BMODEL_EDGES)
+		{
+			R_Printf(PRINT_ALL,"Out of edges for bmodel\n");
+			return;
+		}
 	}
 
 	// draw or recurse further
@@ -309,20 +315,18 @@ R_RecursiveClipBPoly (bedge_t *pedges, mnode_t *pnode, msurface_t *psurf)
 				{
 					if (pn->contents != CONTENTS_SOLID)
 					{
-						if (r_newrefdef.areabits)
-						{
-							area = ((mleaf_t *)pn)->area;
-							if (! (r_newrefdef.areabits[area>>3] & (1<<(area&7)) ) )
-								continue;		// not visible
-						}
+						int r_currentbkey;
+
+						if (!R_AreaVisible((mleaf_t *)pn))
+							continue;
 
 						r_currentbkey = ((mleaf_t *)pn)->key;
-						R_RenderBmodelFace (psideedges[i], psurf);
+						R_RenderBmodelFace(currententity, psideedges[i], psurf, r_currentbkey);
 					}
 				}
 				else
 				{
-					R_RecursiveClipBPoly (psideedges[i], pnode->children[i],
+					R_RecursiveClipBPoly(currententity, psideedges[i], pnode->children[i],
 									  psurf);
 				}
 			}
@@ -338,23 +342,25 @@ Bmodel crosses multiple leafs
 ================
 */
 void
-R_DrawSolidClippedSubmodelPolygons (model_t *pmodel, mnode_t *topnode)
+R_DrawSolidClippedSubmodelPolygons(entity_t *currententity, const model_t *currentmodel, mnode_t *topnode)
 {
-	int			i, j, lindex;
-	vec_t		dot;
+	int		i;
 	msurface_t	*psurf;
-	int			numsurfaces;
-	bedge_t		*pbedge;
-	medge_t		*pedge, *pedges;
+	int		numsurfaces;
+	medge_t		*pedges;
 
 	// FIXME: use bounding-box-based frustum clipping info?
-	psurf = &pmodel->surfaces[pmodel->firstmodelsurface];
-	numsurfaces = pmodel->nummodelsurfaces;
-	pedges = pmodel->edges;
+	psurf = &currentmodel->surfaces[currentmodel->firstmodelsurface];
+	numsurfaces = currentmodel->nummodelsurfaces;
+	pedges = currentmodel->edges;
 
 	for (i=0 ; i<numsurfaces ; i++, psurf++)
 	{
 		mplane_t *pplane;
+		bedge_t  *pbedge;
+		medge_t  *pedge;
+		vec_t    dot;
+		int      j;
 
 		// find which side of the node we are on
 		pplane = psurf->plane;
@@ -372,15 +378,15 @@ R_DrawSolidClippedSubmodelPolygons (model_t *pmodel, mnode_t *topnode)
 		// clockwise winding
 		// FIXME: if edges and vertices get caches, these assignments must move
 		// outside the loop, and overflow checking must be done here
-		pbverts = bverts;
-		pbedges = bedges;
 		numbverts = numbedges = 0;
 		pbedge = &bedges[numbedges];
 		numbedges += psurf->numedges;
 
 		for (j=0 ; j<psurf->numedges ; j++)
 		{
-		   lindex = pmodel->surfedges[psurf->firstedge+j];
+			int	lindex;
+
+			lindex = currentmodel->surfedges[psurf->firstedge+j];
 
 			if (lindex > 0)
 			{
@@ -401,10 +407,15 @@ R_DrawSolidClippedSubmodelPolygons (model_t *pmodel, mnode_t *topnode)
 
 		pbedge[j-1].pnext = NULL; // mark end of edges
 
-		if ( !( psurf->texinfo->flags & ( SURF_TRANS66 | SURF_TRANS33 ) ) )
-			R_RecursiveClipBPoly (pbedge, topnode, psurf);
+		if ( !( psurf->texinfo->flags & ( SURF_TRANS66 | SURF_TRANS33 ) ))
+		{
+			// FIXME: Fan broken in borehole
+			R_RecursiveClipBPoly(currententity, pbedge, topnode, psurf);
+		}
 		else
-			R_RenderBmodelFace( pbedge, psurf );
+		{
+			R_RenderBmodelFace(currententity, pbedge, psurf, ((mleaf_t *)topnode)->key);
+		}
 	}
 }
 
@@ -417,7 +428,7 @@ All in one leaf
 ================
 */
 void
-R_DrawSubmodelPolygons (model_t *pmodel, int clipflags, mnode_t *topnode)
+R_DrawSubmodelPolygons(entity_t *currententity, const model_t *currentmodel, int clipflags, mnode_t *topnode)
 {
 	int			i;
 	vec_t		dot;
@@ -425,8 +436,8 @@ R_DrawSubmodelPolygons (model_t *pmodel, int clipflags, mnode_t *topnode)
 	int numsurfaces;
 
 	// FIXME: use bounding-box-based frustum clipping info?
-	psurf = &pmodel->surfaces[pmodel->firstmodelsurface];
-	numsurfaces = pmodel->nummodelsurfaces;
+	psurf = &currentmodel->surfaces[currentmodel->firstmodelsurface];
+	numsurfaces = currentmodel->nummodelsurfaces;
 
 	for (i=0 ; i<numsurfaces ; i++, psurf++)
 	{
@@ -443,7 +454,7 @@ R_DrawSubmodelPolygons (model_t *pmodel, int clipflags, mnode_t *topnode)
 			r_currentkey = ((mleaf_t *)topnode)->key;
 
 			// FIXME: use bounding-box-based frustum clipping info?
-			R_RenderFace (psurf, clipflags);
+			R_RenderFace(currententity, currentmodel, psurf, clipflags, true);
 		}
 	}
 }
@@ -457,7 +468,8 @@ R_RecursiveWorldNode
 ================
 */
 static void
-R_RecursiveWorldNode (mnode_t *node, int clipflags)
+R_RecursiveWorldNode (entity_t *currententity, const model_t *currentmodel, mnode_t *node,
+	int clipflags, qboolean insubmodel)
 {
 	int c;
 	vec3_t acceptpt, rejectpt;
@@ -516,12 +528,8 @@ R_RecursiveWorldNode (mnode_t *node, int clipflags)
 		msurface_t **mark;
 		pleaf = (mleaf_t *)node;
 
-		// check for door connected areas
-		if (r_newrefdef.areabits)
-		{
-			if (! (r_newrefdef.areabits[pleaf->area>>3] & (1<<(pleaf->area&7)) ) )
-				return;	// not visible
-		}
+		if (!R_AreaVisible(pleaf))
+			return;	// not visible
 
 		mark = pleaf->firstmarksurface;
 		c = pleaf->nummarksurfaces;
@@ -570,7 +578,7 @@ R_RecursiveWorldNode (mnode_t *node, int clipflags)
 			side = 1;
 
 		// recurse down the children, front side first
-		R_RecursiveWorldNode (node->children[side], clipflags);
+		R_RecursiveWorldNode (currententity, currentmodel, node->children[side], clipflags, insubmodel);
 
 		// draw stuff
 		c = node->numsurfaces;
@@ -588,7 +596,7 @@ R_RecursiveWorldNode (mnode_t *node, int clipflags)
 					if ((surf->flags & SURF_PLANEBACK) &&
 						(surf->visframe == r_framecount))
 					{
-						R_RenderFace (surf, clipflags);
+						R_RenderFace (currententity, currentmodel, surf, clipflags, insubmodel);
 					}
 
 					surf++;
@@ -601,7 +609,7 @@ R_RecursiveWorldNode (mnode_t *node, int clipflags)
 					if (!(surf->flags & SURF_PLANEBACK) &&
 						(surf->visframe == r_framecount))
 					{
-						R_RenderFace (surf, clipflags);
+						R_RenderFace (currententity, currentmodel, surf, clipflags, insubmodel);
 					}
 
 					surf++;
@@ -613,19 +621,19 @@ R_RecursiveWorldNode (mnode_t *node, int clipflags)
 		}
 
 		// recurse down the back side
-		R_RecursiveWorldNode (node->children[!side], clipflags);
+		R_RecursiveWorldNode (currententity, currentmodel, node->children[!side], clipflags, insubmodel);
 	}
 }
-
-
 
 /*
 ================
 R_RenderWorld
 ================
 */
-void R_RenderWorld (void)
+void
+R_RenderWorld (void)
 {
+	const model_t *currentmodel = r_worldmodel;
 
 	if (!r_drawworld->value)
 		return;
@@ -636,11 +644,9 @@ void R_RenderWorld (void)
 
 	// auto cycle the world frame for texture animation
 	r_worldentity.frame = (int)(r_newrefdef.time*2);
-	currententity = &r_worldentity;
 
 	VectorCopy (r_origin, modelorg);
-	currentmodel = r_worldmodel;
 	r_pcurrentvertbase = currentmodel->vertexes;
 
-	R_RecursiveWorldNode (currentmodel->nodes, ALIAS_XY_CLIP_MASK);
+	R_RecursiveWorldNode (&r_worldentity, currentmodel, currentmodel->nodes, ALIAS_XY_CLIP_MASK, false);
 }

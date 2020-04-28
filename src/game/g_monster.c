@@ -262,7 +262,7 @@ M_CheckGround(edict_t *ent)
 		VectorCopy(trace.endpos, ent->s.origin);
 		ent->groundentity = trace.ent;
 		ent->groundentity_linkcount = trace.ent->linkcount;
-		ent->velocity[2] = trace.ent->velocity[2];
+		ent->velocity[2] = 0;
 	}
 }
 
@@ -522,11 +522,19 @@ M_MoveFrame(edict_t *self)
 		(self->monsterinfo.nextframe >= move->firstframe) &&
 		(self->monsterinfo.nextframe <= move->lastframe))
 	{
-		self->s.frame = self->monsterinfo.nextframe;
+		if (self->s.frame != self->monsterinfo.nextframe)
+		{
+			self->s.frame = self->monsterinfo.nextframe;
+			self->monsterinfo.aiflags &= ~AI_HOLD_FRAME;
+		}
+
 		self->monsterinfo.nextframe = 0;
 	}
 	else
 	{
+		/* prevent nextframe from leaking into a future move */
+		self->monsterinfo.nextframe = 0;
+
 		if (self->s.frame == move->lastframe)
 		{
 			if (move->endfunc)
@@ -953,13 +961,18 @@ walkmonster_start_go(edict_t *self)
 		self->yaw_speed = 20;
 	}
 
-	self->viewheight = 25;
-
-	monster_start_go(self);
+	if (!self->viewheight)
+	{
+		self->viewheight = 25;
+	}
 
 	if (self->spawnflags & 2)
 	{
 		monster_triggered_start(self);
+	}
+	else
+	{
+		monster_start_go(self);
 	}
 }
 
@@ -993,13 +1006,18 @@ flymonster_start_go(edict_t *self)
 		self->yaw_speed = 10;
 	}
 
-	self->viewheight = 25;
-
-	monster_start_go(self);
+	if (!self->viewheight)
+	{
+		self->viewheight = 25;
+	}
 
 	if (self->spawnflags & 2)
 	{
 		monster_triggered_start(self);
+	}
+	else
+	{
+		monster_start_go(self);
 	}
 }
 
@@ -1029,13 +1047,18 @@ swimmonster_start_go(edict_t *self)
 		self->yaw_speed = 10;
 	}
 
-	self->viewheight = 10;
-
-	monster_start_go(self);
+	if (!self->viewheight)
+	{
+		self->viewheight = 10;
+	}
 
 	if (self->spawnflags & 2)
 	{
 		monster_triggered_start(self);
+	}
+	else
+	{
+		monster_start_go(self);
 	}
 }
 

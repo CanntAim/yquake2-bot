@@ -51,16 +51,18 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#include "ref.h"
-#include "vid.h"
+#include "../../common/header/common.h"
+
+#include "../sound/header/local.h"
+#include "../curl/header/download.h"
+#include "../sound/header/sound.h"
+#include "../sound/header/vorbis.h"
+#include "../vid/header/ref.h"
+#include "../vid/header/vid.h"
+
 #include "screen.h"
 #include "keyboard.h"
 #include "console.h"
-
-#include "../sound/header/local.h"
-#include "../sound/header/cdaudio.h"
-#include "../sound/header/sound.h"
-#include "../sound/header/vorbis.h"
 
 typedef struct
 {
@@ -244,20 +246,35 @@ typedef struct
 	char		downloadname[MAX_OSPATH];
 	int			downloadnumber;
 	dltype_t	downloadtype;
+	size_t		downloadposition;
 	int			downloadpercent;
 
 	/* demo recording info must be here, so it isn't cleared on level change */
 	qboolean	demorecording;
 	qboolean	demowaiting; /* don't record until a non-delta message is received */
 	FILE		*demofile;
+
+#ifdef USE_CURL
+	/* http downloading */
+	dlqueue_t  downloadQueue; /* queues with files to download. */
+	dlhandle_t HTTPHandles[MAX_HTTP_HANDLES]; /* download handles. */
+	char	   downloadServer[512]; /* URL prefix to dowload from .*/
+	char	   downloadServerRetry[512]; /* retry count. */
+	char	   downloadReferer[32]; /* referer string. */
+#endif
 } client_static_t;
 
 extern client_static_t	cls;
 
-/*Evil hack against too many power screen and power
-  shield impact sounds. For example if the player
-  fires his shotgun onto a Brain. */
+/* Evil hack against too many power screen and power
+   shield impact sounds. For example if the player
+   fires his shotgun onto a Brain. */
 extern int num_power_sounds;
+
+/* Even more evil hack against spurious cinematic
+   aborts caused by an unspeakable evil hack right
+   out of the deeps of hell... Aeh... KeyEvent(). */
+extern int abort_cinematic;
 
 /* cvars */
 extern	cvar_t	*gl1_stereo_separation;
@@ -290,10 +307,12 @@ extern	cvar_t	*m_side;
 extern	cvar_t	*freelook;
 extern	cvar_t	*cl_lightlevel;
 extern	cvar_t	*cl_paused;
+extern	cvar_t	*cl_loadpaused;
 extern	cvar_t	*cl_timedemo;
 extern	cvar_t	*cl_vwep;
 extern	cvar_t  *horplus;
 extern	cvar_t	*cin_force43;
+extern	cvar_t	*vid_fullscreen;
 
 typedef struct
 {
@@ -313,6 +332,8 @@ extern	entity_state_t	cl_parse_entities[MAX_PARSE_ENTITIES];
 
 extern	netadr_t	net_from;
 extern	sizebuf_t	net_message;
+
+extern qboolean paused_at_load;
 
 void DrawString (int x, int y, char *s);
 void DrawStringScaled(int x, int y, char *s, float factor);
@@ -435,6 +456,7 @@ void CL_GetChallengePacket (void);
 void CL_PingServers_f (void);
 void CL_Snd_Restart_f (void);
 void CL_RequestNextDownload (void);
+void CL_ResetPrecacheCheck (void);
 
 typedef struct
 {
@@ -554,9 +576,11 @@ void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch);
 void GymCapturePlayerStateCL(refdef_t refdef, player_state_t state);
 void GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior);
 void* GymOpenSocket(void *args);
+void GymDisplayFPS(float fps);
 void GymStartServer(void);
 void GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float fraglimit, float maxclients, char hostname[1024]);
 int GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]);
 int GymCheckIfIsVisibleCL(float source[3], float dest[3]);
 float GymCheckDistanceTo(float source[3], float dest[3]);
+qboolean GymRender(void);
 #endif

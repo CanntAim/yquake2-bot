@@ -32,10 +32,10 @@
 #include <io.h>
 #include <shlobj.h>
 #include <stdio.h>
+#include <wchar.h>
 #include <windows.h>
 
 #include "../../common/header/common.h"
-#include "../generic/header/input.h"
 #include "header/resource.h"
 
 // stdin and stdout handles
@@ -43,6 +43,9 @@ static HANDLE hinput, houtput;
 
 // Game library handle
 static HINSTANCE game_library;
+
+// Config dir
+char cfgdir[MAX_OSPATH] = CFGDIR;
 
 // Buffer for the dedicated server console
 static char console_text[256];
@@ -63,7 +66,7 @@ Sys_Error(char *error, ...)
 	Qcommon_Shutdown();
 
 	va_start(argptr, error);
-	vsprintf(text, error, argptr);
+	vsnprintf(text, sizeof(text), error, argptr);
 	va_end(argptr);
 	fprintf(stderr, "Error: %s\n", text);
 
@@ -261,29 +264,24 @@ Sys_ConsoleOutput(char *string)
 long long
 Sys_Microseconds(void)
 {
-	long long microseconds;
-	static long long uSecbase;
+	static LARGE_INTEGER freq = { 0 };
+	static LARGE_INTEGER base = { 0 };
 
-	FILETIME ft;
-	unsigned long long tmpres = 0;
-
-	GetSystemTimeAsFileTime(&ft);
-
-	tmpres |= ft.dwHighDateTime;
-	tmpres <<= 32;
-	tmpres |= ft.dwLowDateTime;
-
-	tmpres /= 10; // Convert to microseconds.
-	tmpres -= 11644473600000000ULL; // ...and to unix epoch.
-
-	microseconds = tmpres;
-
-	if (!uSecbase)
+    if (!freq.QuadPart)
 	{
-		uSecbase = microseconds - 1001ll;
+		QueryPerformanceFrequency(&freq);
 	}
 
-	return microseconds - uSecbase;
+	if (!base.QuadPart)
+	{
+		QueryPerformanceCounter(&base);
+		base.QuadPart -= 1001;
+	}
+
+	LARGE_INTEGER cur;
+	QueryPerformanceCounter(&cur);
+
+	return (cur.QuadPart - base.QuadPart) * 1000000 / freq.QuadPart;
 }
 
 int
@@ -531,9 +529,61 @@ Sys_GetHomeDir(void)
 		}
 	}
 
-	snprintf(gdir, sizeof(gdir), "%s/%s/", profile, CFGDIR);
+	snprintf(gdir, sizeof(gdir), "%s/%s/", profile, cfgdir);
 
 	return gdir;
+}
+
+void
+Sys_Remove(const char *path)
+{
+	WCHAR wpath[MAX_OSPATH] = {0};
+	MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, MAX_OSPATH);
+
+	_wremove(wpath);
+}
+
+int
+Sys_Rename(const char *from, const char *to)
+{
+	WCHAR wfrom[MAX_OSPATH] = {0};
+	MultiByteToWideChar(CP_UTF8, 0, from, -1, wfrom, MAX_OSPATH);
+
+	WCHAR wto[MAX_OSPATH] = {0};
+	MultiByteToWideChar(CP_UTF8, 0, to, -1, wto, MAX_OSPATH);
+
+	return _wrename(wfrom, wto);
+}
+
+void
+Sys_RemoveDir(const char *path)
+{
+	WCHAR wpath[MAX_OSPATH] = {0};
+	WCHAR wpathwithwildcard[MAX_OSPATH] = {0};
+	WCHAR wpathwithfilename[MAX_OSPATH] = {0};
+	WIN32_FIND_DATAW fd;
+	
+	MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, MAX_OSPATH);
+
+	wcscat_s(wpathwithwildcard, MAX_OSPATH, wpath);
+	wcscat_s(wpathwithwildcard, MAX_OSPATH, L"\\*.*");
+	
+	HANDLE hFind = FindFirstFileW(wpathwithwildcard, &fd);
+	if (hFind != INVALID_HANDLE_VALUE)
+	{
+		do
+		{
+			wmemset(wpathwithfilename, 0, MAX_OSPATH);
+			wcscat_s(wpathwithfilename, MAX_OSPATH, wpath);
+			wcscat_s(wpathwithfilename, MAX_OSPATH, fd.cFileName);
+			
+			DeleteFileW(wpathwithfilename);
+		}
+		while (FindNextFileW(hFind, &fd));
+		FindClose(hFind);
+	}
+	
+	RemoveDirectoryW(wpath);
 }
 
 /* ======================================================================= */

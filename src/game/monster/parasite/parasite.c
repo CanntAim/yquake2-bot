@@ -452,7 +452,7 @@ parasite_pain(edict_t *self, edict_t *other /* unused */,
 
 	self->pain_debounce_time = level.time + 3;
 
-	if (skill->value == 3)
+	if (skill->value == SKILL_HARDPLUS)
 	{
 		return; /* no pain anims in nightmare */
 	}
@@ -764,6 +764,7 @@ SP_monster_parasite(edict_t *self)
 	self->health = 175;
 	self->gib_health = -50;
 	self->mass = 250;
+	self->viewheight = 16;
 
 	self->pain = parasite_pain;
 	self->die = parasite_die;

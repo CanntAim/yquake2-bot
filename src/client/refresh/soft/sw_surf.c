@@ -17,28 +17,20 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-// r_surf.c: surface-related refresh code
+// sw_surf.c: surface-related refresh code
 
 #include "header/local.h"
 
-drawsurf_t		r_drawsurf;
-static int		lightleft, blocksize, sourcetstep;
-static int		lightright, lightleftstep, lightrightstep, blockdivshift;
+static int		sourcetstep;
 static void		*prowdestbase;
 static unsigned char	*pbasesource;
-static int		surfrowbytes;	// used by ASM files
 static int		r_stepback;
 static int		r_lightwidth;
-static int		r_numhblocks, r_numvblocks;
+static int		r_numvblocks;
 static unsigned char	*r_source, *r_sourcemax;
 static unsigned		*r_lightptr;
 
-static void R_DrawSurfaceBlock8_anymip (int level);
-
-void R_BuildLightMap (void);
-extern	unsigned	blocklights[1024];	// allow some very large lightmaps
-
-static	float	surfscale;
+void R_BuildLightMap (drawsurf_t *drawsurf);
 
 static int	sc_size;
 static surfcache_t	*sc_rover;
@@ -51,11 +43,15 @@ R_TextureAnimation
 Returns the proper texture for a given time and base texture
 ===============
 */
-static image_t *R_TextureAnimation (mtexinfo_t *tex)
+static image_t *
+R_TextureAnimation (const entity_t *currententity, mtexinfo_t *tex)
 {
 	int c;
 
 	if (!tex->next)
+		return tex->image;
+
+	if (!currententity)
 		return tex->image;
 
 	c = currententity->frame % tex->numframes;
@@ -70,89 +66,12 @@ static image_t *R_TextureAnimation (mtexinfo_t *tex)
 
 
 /*
-===============
-R_DrawSurface
-===============
-*/
-static void R_DrawSurface (void)
-{
-	unsigned char	*basetptr;
-	int		smax, tmax, twidth;
-	int		u;
-	int		soffset, basetoffset, texwidth;
-	int		horzblockstep;
-	unsigned char	*pcolumndest;
-	image_t		*mt;
-
-	surfrowbytes = r_drawsurf.rowbytes;
-
-	mt = r_drawsurf.image;
-
-	r_source = mt->pixels[r_drawsurf.surfmip];
-
-	// the fractional light values should range from 0 to (VID_GRADES - 1) << 16
-	// from a source range of 0 - 255
-
-	texwidth = mt->width >> r_drawsurf.surfmip;
-
-	blocksize = 16 >> r_drawsurf.surfmip;
-	blockdivshift = NUM_MIPS - r_drawsurf.surfmip;
-
-	r_lightwidth = (r_drawsurf.surf->extents[0]>>4)+1;
-
-	r_numhblocks = r_drawsurf.surfwidth >> blockdivshift;
-	r_numvblocks = r_drawsurf.surfheight >> blockdivshift;
-
-	//==============================
-
-	// TODO: only needs to be set when there is a display settings change
-	horzblockstep = blocksize;
-
-	smax = mt->width >> r_drawsurf.surfmip;
-	twidth = texwidth;
-	tmax = mt->height >> r_drawsurf.surfmip;
-	sourcetstep = texwidth;
-	r_stepback = tmax * twidth;
-
-	r_sourcemax = r_source + (tmax * smax);
-
-	soffset = r_drawsurf.surf->texturemins[0];
-	basetoffset = r_drawsurf.surf->texturemins[1];
-
-	// << 16 components are to guarantee positive values for %
-	soffset = ((soffset >> r_drawsurf.surfmip) + (smax << SHIFT16XYZ)) % smax;
-	basetptr = &r_source[((((basetoffset >> r_drawsurf.surfmip)
-		+ (tmax << SHIFT16XYZ)) % tmax) * twidth)];
-
-	pcolumndest = r_drawsurf.surfdat;
-
-	for (u=0 ; u<r_numhblocks; u++)
-	{
-		r_lightptr = blocklights + u;
-
-		prowdestbase = pcolumndest;
-
-		pbasesource = basetptr + soffset;
-
-		R_DrawSurfaceBlock8_anymip(NUM_MIPS - r_drawsurf.surfmip);
-
-		soffset = soffset + blocksize;
-		if (soffset >= smax)
-			soffset = 0;
-
-		pcolumndest += horzblockstep;
-	}
-}
-
-
-//=============================================================================
-
-/*
 ================
 R_DrawSurfaceBlock8_anymip
 ================
 */
-static void R_DrawSurfaceBlock8_anymip (int level)
+static void
+R_DrawSurfaceBlock8_anymip (int level, int surfrowbytes)
 {
 	int		v, i, b, lightstep, lighttemp, light, size;
 	unsigned char	pix, *psource, *prowdest;
@@ -163,7 +82,9 @@ static void R_DrawSurfaceBlock8_anymip (int level)
 
 	for (v=0 ; v<r_numvblocks ; v++)
 	{
-		// FIXME: make these locals?
+		int	lightleft, lightright;
+		int	lightleftstep, lightrightstep;
+
 		// FIXME: use delta rather than both right and left, like ASM?
 		lightleft = r_lightptr[0];
 		lightright = r_lightptr[1];
@@ -197,8 +118,88 @@ static void R_DrawSurfaceBlock8_anymip (int level)
 	}
 }
 
-//============================================================================
 
+/*
+===============
+R_DrawSurface
+===============
+*/
+static void
+R_DrawSurface (drawsurf_t *drawsurf)
+{
+	unsigned char	*basetptr;
+	int		smax, tmax, twidth;
+	int		u;
+	int		soffset, basetoffset, texwidth;
+	int		blocksize;
+	unsigned char	*pcolumndest;
+	image_t		*mt;
+	int		blockdivshift;
+	int		r_numhblocks;
+
+	mt = drawsurf->image;
+
+	r_source = mt->pixels[drawsurf->surfmip];
+
+	// the fractional light values should range from 0 to (VID_GRADES - 1) << 16
+	// from a source range of 0 - 255
+
+	texwidth = mt->width >> drawsurf->surfmip;
+
+	blocksize = 16 >> drawsurf->surfmip;
+	blockdivshift = NUM_MIPS - drawsurf->surfmip;
+
+	r_lightwidth = (drawsurf->surf->extents[0]>>4)+1;
+
+	r_numhblocks = drawsurf->surfwidth >> blockdivshift;
+	r_numvblocks = drawsurf->surfheight >> blockdivshift;
+
+	//==============================
+
+	smax = mt->width >> drawsurf->surfmip;
+	twidth = texwidth;
+	tmax = mt->height >> drawsurf->surfmip;
+	sourcetstep = texwidth;
+	r_stepback = tmax * twidth;
+
+	r_sourcemax = r_source + (tmax * smax);
+
+	soffset = drawsurf->surf->texturemins[0];
+	basetoffset = drawsurf->surf->texturemins[1];
+
+	// << 16 components are to guarantee positive values for %
+	soffset = ((soffset >> drawsurf->surfmip) + (smax << SHIFT16XYZ)) % smax;
+	basetptr = &r_source[((((basetoffset >> drawsurf->surfmip)
+		+ (tmax << SHIFT16XYZ)) % tmax) * twidth)];
+
+	pcolumndest = drawsurf->surfdat;
+
+	for (u=0 ; u<r_numhblocks; u++)
+	{
+		r_lightptr = blocklights + u;
+
+		if (r_lightptr >= blocklight_max)
+		{
+			r_outoflights = true;
+			continue;
+		}
+
+		prowdestbase = pcolumndest;
+
+		pbasesource = basetptr + soffset;
+
+		R_DrawSurfaceBlock8_anymip(NUM_MIPS - drawsurf->surfmip, drawsurf->rowbytes);
+
+		soffset = soffset + blocksize;
+		if (soffset >= smax)
+			soffset = 0;
+
+		pcolumndest += blocksize;
+	}
+}
+
+
+//=============================================================================
 
 /*
 ================
@@ -206,7 +207,8 @@ R_InitCaches
 
 ================
 */
-void R_InitCaches (void)
+void
+R_InitCaches (void)
 {
 	int		size;
 
@@ -232,6 +234,12 @@ void R_InitCaches (void)
 
 	sc_size = size;
 	sc_base = (surfcache_t *)malloc(size);
+	if (!sc_base)
+	{
+		ri.Sys_Error(ERR_FATAL, "%s: Can't allocate cache.", __func__);
+		// code never returns after ERR_FATAL
+		return;
+	}
 	sc_rover = sc_base;
 
 	sc_base->next = NULL;
@@ -245,7 +253,8 @@ void R_InitCaches (void)
 D_FlushCaches
 ==================
 */
-void D_FlushCaches (void)
+void
+D_FlushCaches (void)
 {
 	surfcache_t     *c;
 
@@ -269,21 +278,28 @@ void D_FlushCaches (void)
 D_SCAlloc
 =================
 */
-static surfcache_t     *D_SCAlloc (int width, int size)
+static surfcache_t *
+D_SCAlloc (int width, int size)
 {
 	surfcache_t	*new;
 
 	if ((width < 0) || (width > 256))
-		ri.Sys_Error (ERR_FATAL,"D_SCAlloc: bad cache width %d\n", width);
+	{
+		ri.Sys_Error(ERR_FATAL, "%s: bad cache width %d\n", __func__, width);
+	}
 
 	if ((size <= 0) || (size > 0x10000))
-		ri.Sys_Error (ERR_FATAL,"D_SCAlloc: bad cache size %d\n", size);
+	{
+		ri.Sys_Error(ERR_FATAL, "%s: bad cache size %d\n", __func__, size);
+	}
 
 	// Add header size
 	size += ((char*)sc_base->data - (char*)sc_base);
 	size = (size + 3) & ~3;
 	if (size > sc_size)
-		ri.Sys_Error (ERR_FATAL,"D_SCAlloc: %i > cache size of %i",size, sc_size);
+	{
+		ri.Sys_Error(ERR_FATAL, "%s: %i > cache size of %i", __func__, size, sc_size);
+	}
 
 	// if there is not size bytes after the rover, reset to the start
 	if ( !sc_rover || (byte *)sc_rover - (byte *)sc_base > sc_size - size)
@@ -301,7 +317,9 @@ static surfcache_t     *D_SCAlloc (int width, int size)
 		// free another
 		sc_rover = sc_rover->next;
 		if (!sc_rover)
-			ri.Sys_Error (ERR_FATAL,"D_SCAlloc: hit the end of memory");
+		{
+			ri.Sys_Error(ERR_FATAL, "%s: hit the end of memory", __func__);
+		}
 		if (sc_rover->owner)
 			*sc_rover->owner = NULL;
 
@@ -335,19 +353,23 @@ static surfcache_t     *D_SCAlloc (int width, int size)
 
 //=============================================================================
 
+static drawsurf_t	r_drawsurf;
+
 /*
 ================
 D_CacheSurface
 ================
 */
-surfcache_t *D_CacheSurface (msurface_t *surface, int miplevel)
+surfcache_t *
+D_CacheSurface (const entity_t *currententity, msurface_t *surface, int miplevel)
 {
-	surfcache_t     *cache;
+	surfcache_t	*cache;
+	float		surfscale;
 
 	//
 	// if the surface is animating or flashing, flush the cache
 	//
-	r_drawsurf.image = R_TextureAnimation (surface->texinfo);
+	r_drawsurf.image = R_TextureAnimation (currententity, surface->texinfo);
 	r_drawsurf.lightadj[0] = r_newrefdef.lightstyles[surface->styles[0]].white*128;
 	r_drawsurf.lightadj[1] = r_newrefdef.lightstyles[surface->styles[1]].white*128;
 	r_drawsurf.lightadj[2] = r_newrefdef.lightstyles[surface->styles[2]].white*128;
@@ -408,10 +430,10 @@ surfcache_t *D_CacheSurface (msurface_t *surface, int miplevel)
 	c_surf++;
 
 	// calculate the lightings
-	R_BuildLightMap ();
+	R_BuildLightMap (&r_drawsurf);
 
 	// rasterize the surface into the cache
-	R_DrawSurface ();
+	R_DrawSurface (&r_drawsurf);
 
 	return cache;
 }
