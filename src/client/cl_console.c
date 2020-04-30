@@ -536,11 +536,14 @@ Con_DrawNotify(void)
 
 		text = con.text + (i % con.totallines) * con.linewidth;
 
+		char* out = (char *)malloc(con.linewidth * sizeof(char));
 		for (x = 0; x < con.linewidth; x++)
 		{
 			Draw_CharScaled(((x + 1) << 3) * scale, v * scale, text[x], scale);
+			out[x] = text[x];
 		}
-
+		GymCaptureConsole(out);
+		free(out);
 		v += 8;
 	}
 

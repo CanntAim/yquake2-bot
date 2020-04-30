@@ -576,6 +576,7 @@ void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch);
 void GymCapturePlayerStateCL(refdef_t refdef, player_state_t state);
 void GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior);
 void* GymOpenSocket(void *args);
+void GymCaptureConsole(char *line);
 void GymDisplayFPS(float fps);
 void GymStartServer(void);
 void GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float fraglimit, float maxclients, char hostname[1024]);
@@ -583,4 +584,7 @@ int GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]);
 int GymCheckIfIsVisibleCL(float source[3], float dest[3]);
 float GymCheckDistanceTo(float source[3], float dest[3]);
 qboolean GymRender(void);
+char *ltrim(char *s);
+char *rtrim(char *s);
+char *trim(char *s);
 #endif

@@ -26,13 +26,14 @@
 
 #include "header/client.h"
 
-qboolean Render = false;
+qboolean Render = true;
 qboolean Ready = false;
 qboolean OpenSocket = false; 
 qboolean SilentSoundCapture = true;
 qboolean SilentPlayerStateCapture = true;
 qboolean SilentEntityCapture = true;
 message_t Message;
+char Map[1024];
 
 int connfd, conncl, connrc;
 
@@ -63,6 +64,7 @@ void
 GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float fraglimit,
 	    float maxclients, char hostname[1024])
 {
+  strncpy(Map, startmap, 1024);  
   Cvar_SetValue("maxclients", maxclients);
   Cvar_SetValue("timelimit", timelimit);
   Cvar_SetValue("fraglimit", fraglimit);
@@ -339,6 +341,16 @@ GymCheckDistanceTo(float source[3], float dest[3])
   return powf(powf(difference[0],2) + powf(difference[1],2) + powf(difference[2],2), .5);
 }
 
+void
+GymCaptureConsole(char *line)
+{
+  printf("%s", line);
+  char* fixed = trim(line);
+  printf("%s", fixed);
+  if(strcmp("point", fixed) == 0){
+    Cbuf_AddText(va("map %s\n", "q2dm1"));
+  }
+}
 
 void
 GymDisplayFPS(float fps)
@@ -407,4 +419,23 @@ void GymMessageToBuffer(message_t message, char buf[10000])
 	  message.enemyPositionZ,
 	  message.projectileDistance);
   write(conncl, buf, strlen(buf));
+}
+
+char *ltrim(char *s)
+{
+  while(isspace(*s)) s++;
+  return s;
+}
+
+char *rtrim(char *s)
+{
+  char* back = s + strlen(s);
+  while(isspace(*--back));
+  *(back+1) = '\0';
+  return s;
+}
+
+char *trim(char *s)
+{
+  return rtrim(ltrim(s)); 
 }
