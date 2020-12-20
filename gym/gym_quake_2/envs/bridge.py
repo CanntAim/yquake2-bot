@@ -5,9 +5,13 @@ import sys
 import os
 
 class Connector:
-    def __init__(self, address, path):
-        os.remove("quake.log")
-        subprocess.Popen("./quake2", cwd=path, stdout=open( 'quake.log', 'w'))
+    def __init__(self, address, path, headless):
+        if not headless:
+            subprocess.Popen("./quake2", cwd=path, stdout=open( 'quake.log', 'w'))
+        else:
+            os.environ["SDL_VIDEODRIVER"] = "dummy"
+            os.environ["SDL_AUDIODRIVER"] = "dummy"
+            subprocess.Popen(['xvfb-run', '-a', '--server-args="0 1024x768x24"', './quake2'], cwd=path, stdout=open( 'quake.log', 'w'))
         print("Waiting 10 seconds for game to start before opening socket connection.")
         time.sleep(10)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

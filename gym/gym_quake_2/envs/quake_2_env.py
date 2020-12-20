@@ -22,7 +22,7 @@ class Quake2Env(gym.Env):
         
         self.action_space = self._action_space()
         self.observation_space = self._observation_space()
-        self.connector = bridge.Connector(socket, path)
+        self.connector = bridge.Connector(socket, path, headless)
 
     def _command(self, action):
         return "test"

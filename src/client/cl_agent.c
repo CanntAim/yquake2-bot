@@ -26,7 +26,8 @@
 
 #include "header/client.h"
 
-qboolean Render = true;
+qboolean Learn = false;
+qboolean Render = false;
 qboolean Ready = false;
 qboolean OpenSocket = false; 
 qboolean SilentSoundCapture = true;
@@ -77,8 +78,8 @@ GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float fragli
     Cbuf_AddText("disconnect\n");
   }
 
+  Cbuf_AddText("cl_showfps 0\n");
   Cbuf_AddText(va("map %s\n", startmap));
-  Cbuf_AddText("timescale 100\n");
 }
 
 void
@@ -157,6 +158,7 @@ GymOpenSocket(void *args){
 	  sprintf(buf, "successfully joined server");
 	  write(conncl, buf, strlen(buf));
 	  Ready = true;
+	  Learn = true;
 	}
       } else {
 	char *command = strtok(buf, ".");
@@ -344,11 +346,10 @@ GymCheckDistanceTo(float source[3], float dest[3])
 void
 GymCaptureConsole(char *line)
 {
-  printf("%s", line);
   char* fixed = trim(line);
-  printf("%s", fixed);
-  if(strcmp("point", fixed) == 0){
-    Cbuf_AddText(va("map %s\n", "q2dm1"));
+  if(strcmp("Player entered the game.", fixed) == 0 && !Learn){
+    Learn = true;
+    Cbuf_AddText(va("map %s\n", Map));
   }
 }
 
