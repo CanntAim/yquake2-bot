@@ -8,11 +8,6 @@ class Agent(object):
     def act(self):
         return self.action_space.sample()
 
-def convert_yn_to_bool(argument):
-    if argument == "y":
-        return True
-    return False
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--socket", help="path to UNIX socket.", \
@@ -35,18 +30,18 @@ if __name__ == '__main__':
                         default="n")
     args = parser.parse_args()
     env = None
-    if convert_yn_to_bool(args.host):
+    if args.host == "y":
         env = q2.DuelEnv(args.socket, args.path, \
                          args.address, None, \
                          args.level, True, \
                          args.timescale, \
-                         convert_yn_to_bool(args.render))
+                         args.render)
     else:
         env = q2.DuelEnv(args.socket, args.path, \
                          args.address, args.port, \
                          None, False, \
                          args.timescale, \
-                         convert_yn_to_bool(args.render))
+                         args.render)
     env.seed(123)
     agent = Agent(env._action_space())
 

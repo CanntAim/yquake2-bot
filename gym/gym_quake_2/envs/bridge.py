@@ -5,13 +5,17 @@ import sys
 import os
 
 class Connector:
-    def __init__(self, address, path, headless):
-        if not headless:
+    def __init__(self, address, path, render):
+        if render == "y":
             subprocess.Popen("./quake2", cwd=path, stdout=open( 'quake.log', 'w'))
         else:
             os.environ["SDL_VIDEODRIVER"] = "dummy"
             os.environ["SDL_AUDIODRIVER"] = "dummy"
-            subprocess.Popen(['xvfb-run', '-a', '--server-args="0 1024x768x24"', './quake2'], cwd=path, stdout=open( 'quake.log', 'w'))
+            subprocess.Popen(['xvfb-run', '-a', \
+                              '--server-args="0 1024x768x24"', \
+                              './quake2'], \
+                             cwd=path, \
+                             stdout=open( 'quake.log', 'w'))
         print("Waiting 10 seconds for game to start before opening socket connection.")
         time.sleep(10)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -34,11 +38,11 @@ class Connector:
         data = message.decode("utf-8").split(delimiter)
         return data
 
-    def start(self, address, level, headless):
+    def start(self, address, level, render):
         errored = False
         started = False
         self.send("start server, {}, {},{}".format(level, address, \
-                                                   headless))
+                                                   render))
         while not started and not errored:
             if "error" == self.receive(50, ",")[0]:
                 errored = True
@@ -47,11 +51,11 @@ class Connector:
                 started = True
                 print("acknowledged server started")
 
-    def connect(self, address, port, headless):
+    def connect(self, address, port, render):
         errored = False
         connected = False
         self.send("connect to server, blank, {}:{},{}".format(address, \
-                                                              port, headless))
+                                                              port, render))
         while not connected and not errored:
             if "error" == self.receive(50, ",")[0]:
                 errored = True
