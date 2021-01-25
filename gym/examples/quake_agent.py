@@ -1,12 +1,6 @@
 import argparse
 import gym_quake_2.envs.duel_env as q2
-
-class Agent(object):
-    def __init__(self, action_space):
-        self.action_space = action_space
-
-    def act(self):
-        return self.action_space.sample()
+import gym_quake_2.envs.quake_2_env as base
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -27,9 +21,13 @@ if __name__ == '__main__':
     parser.add_argument("--timescale", help="game time scale.", \
                         default="1")
     parser.add_argument("--render", help="whether to run headless.", \
-                        default="n")
+                        default="n") 
+    parser.add_argument("--seed", help="environment seed value.", \
+                        default="0")
+
     args = parser.parse_args()
     env = None
+
     if args.host == "y":
         env = q2.DuelEnv(args.socket, args.path, \
                          args.address, None, \
@@ -42,16 +40,5 @@ if __name__ == '__main__':
                          None, False, \
                          args.timescale, \
                          args.render)
-    env.seed(123)
-    agent = Agent(env._action_space())
 
-    episode = 0
-    while episode < int(args.episodes):
-        obs = env._reset()
-        done = False
-        while not done:
-            action = agent.act()
-            obs, reward, done, info = env._step(action)
-        episode += 1
-
-    env.close()
+    base.Runner(int(args.seed), args.episodes, env).run()
