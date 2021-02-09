@@ -93,7 +93,7 @@ class Quake2Env(gym.Env):
                    "backdown.", "backup."]
         self._connector.send(random.choice(actions))
         observations = np.array(self._connector.receive(10000, ","))
-        print(observations)
+        observations = [attr for attr in observations if attr != ""][:14]
         observations = np.array(list(map(float, observations)))
         observations = np.array(list(map(round, observations)))
         reward = self._compute_reward(observations)

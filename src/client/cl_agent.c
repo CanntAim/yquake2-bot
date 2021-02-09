@@ -150,12 +150,12 @@ GymOpenSocket(void *args){
 
 	if (strcmp("start server", purpose) == 0) {
 	  GymStartGameServerAndSetRules(map, 10.0, 0.0, 2.0, address);
-	  sprintf(buf, "successfully started server");
+	  snprintf(buf, 500, "successfully started server");
 	  write(conncl, buf, strlen(buf));
 	  Ready = true;
 	} else if (strcmp("connect to server", purpose) == 0) {
 	  GymJoinGameServer(address);
-	  sprintf(buf, "successfully joined server");
+	  snprintf(buf, 500, "successfully joined server");
 	  write(conncl, buf, strlen(buf));
 	  Ready = true;
 	  Learn = true;
@@ -404,7 +404,7 @@ void GymCaptureCurrentPlayerSoundStateCL(channel_t *ch)
 
 void GymMessageToBuffer(message_t message, char buf[10000])
 {
-  sprintf(buf, "%f,%f,%f,%f,%f,%f,%d,%d,%d,%f,%f,%f,%f,%f",
+  snprintf(buf, 10000, "%f,%f,%f,%f,%f,%f,%d,%d,%d,%f,%f,%f,%f,%f,",
 	  message.playerPositionX,
 	  message.playerPositionY,
 	  message.playerPositionZ,
@@ -420,7 +420,7 @@ void GymMessageToBuffer(message_t message, char buf[10000])
 	  message.enemyPositionZ,
 	  message.projectileDistance);
   if (Ready) {
-    write(conncl, buf, strlen(buf));
+    write(conncl, buf, strlen(buf)); 
   }
 }
 
