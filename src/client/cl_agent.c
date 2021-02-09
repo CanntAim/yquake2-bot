@@ -419,7 +419,9 @@ void GymMessageToBuffer(message_t message, char buf[10000])
 	  message.enemyPositionY,
 	  message.enemyPositionZ,
 	  message.projectileDistance);
-  write(conncl, buf, strlen(buf));
+  if (Ready) {
+    write(conncl, buf, strlen(buf));
+  }
 }
 
 char *ltrim(char *s)
