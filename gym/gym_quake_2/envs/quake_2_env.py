@@ -19,7 +19,7 @@ class Runner():
         self._episodes = episodes
         self._environment = environment
         self._environment.seed(initial_value)
-        self._model = Model(14, 14, 14)
+        self._model = Model(14, 6, 14)
         self._memory = Memory(50000)
         self._reward_store = []
 
@@ -42,10 +42,16 @@ class Runner():
         for idx, tup in enumerate(batch):
             state, action, reward, next_state = tup[0], tup[1], tup[2], tup[3]
             current_q = q_s_a[idx]
+            print(action)
+            print(q_s_a)
+            print(q_s_a_d)
+            print(current_q)
+            print(q_s_a[idx])
+            print(reward)
             if next_state is None:
-                current_q[action] = reward
+                current_q[action].assign(reward)
             else:
-                current_q[action] = reward + GAMMA * np.amax(q_s_a_d[idx])
+                current_q[action].assign(reward + GAMMA * np.amax(q_s_a_d[idx]))
             states[idx] = state
             actions[idx] = current_q
         self._model.train_batch(states, actions)
@@ -60,6 +66,8 @@ class Runner():
             if done:
                 next_state = None
             self._memory.add_sample((state, action, reward, next_state))
+
+            self._replay()
 
             self._eps = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) \
                         * math.exp(-LAMBDA * self._environment._steps)
@@ -91,7 +99,7 @@ class Quake2Env(gym.Env):
         actions = ["attackup.", "forwardup.", \
                    "forwarddown.", "attackdown.", \
                    "backdown.", "backup."]
-        self._connector.send(random.choice(actions))
+        self._connector.send(actions[action])
         observations = np.array(self._connector.receive(10000, ","))
         observations = [attr for attr in observations if attr != ""][:14]
         observations = np.array(list(map(float, observations)))
@@ -104,7 +112,6 @@ class Quake2Env(gym.Env):
 
     def _compute_reward(self, observations):
         """Returns a reward value"""
-        print(observations)
         return 1
 
     def _action_space(self):
@@ -160,25 +167,19 @@ class Model:
         self.batch_size = batch_size
 
         self._optimizer = None
-        self._logits = tf.keras.layers.Dense(self.num_actions)
-        self._q_s_a = tf.convert_to_tensor(np.random.normal(size=(14,)))
-        self._fully_connected_layer_1 = tf.keras.layers.Dense(50, activation="relu")
-        self._fully_connected_layer_2 = tf.keras.layers.Dense(50, activation="relu")
+        self._logits = None 
+        self._fully_connected_layer_1 = None 
+        self._fully_connected_layer_2 = None 
+        self._q_s_a = tf.Variable(initial_value=\
+                                  tf.convert_to_tensor(np.random.normal(size=(14,))))
 
     def _eval(self, tensor):
-        fully_connected_layer_1 = \
-            self._fully_connected_layer_1(tensor)
-        print(fully_connected_layer_1)
-        print(self._fully_connected_layer_1)
-        fully_connected_layer_2 = \
-            self._fully_connected_layer_2(fully_connected_layer_1)
-        logits = \
-            self._logits(fully_connected_layer_2)
-
-        loss = tf.keras.losses.mean_squared_error(self._q_s_a, logits)
-        #gradients = tape.gradient(total_loss, self._logits)
-        #self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.1)
-        #self._optimizer.minimize(loss, var_list=[self._q_s_a])
+        self._fully_connected_layer_1 = \
+            tf.keras.layers.Dense(50, activation="relu")(tensor)
+        self._fully_connected_layer_2 = \
+            tf.keras.layers.Dense(50, activation="relu")(self._fully_connected_layer_1)
+        self._logits = \
+            tf.keras.layers.Dense(self.num_actions)(self._fully_connected_layer_2)
 
     def predict_one(self, state):
         tensor = tf.convert_to_tensor(state.reshape(1, self.num_states))
@@ -186,11 +187,17 @@ class Model:
         return self._logits
 
     def predict_batch(self, states):
-        self._eval(states)
+        tensor = tf.convert_to_tensor(states)
+        self._eval(tensor)
         return self._logits
 
+    @tf.function
     def train_batch(self, x_batch, y_batch):
-        x_batch = tf.convert_to_tensor(x_batch)
-        y_batch = tf.convert_to_tensor(y_batch)
-        self._eval(x_batch)
-        self._eval(y_batch)
+        with tf.GradientTape() as tape:
+            tensor = tf.convert_to_tensor(x_batch)
+            self._eval(tensor)
+            loss = tf.keras.losses.mean_squared_error(self._q_s_a, self._logits)
+
+        gradients = tape.gradient(loss, self._logits)
+        self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.1)
+        self._optimizer.minimize(loss, var_list=[self._q_s_a])
