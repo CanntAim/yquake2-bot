@@ -37,24 +37,21 @@ class Runner():
         q_s_a = self._model.predict_batch(states)
         q_s_a_d = self._model.predict_batch(next_states)
 
-        states = np.zeros((len(batch), self._model.num_states))
-        actions = np.zeros((len(batch), self._model.num_actions))
+        x = np.zeros((len(batch), self._model.num_states))
+        y = np.zeros((len(batch), self._model.num_actions))
         for idx, tup in enumerate(batch):
             state, action, reward, next_state = tup[0], tup[1], tup[2], tup[3]
-            current_q = q_s_a[idx]
-            print(action)
-            print(q_s_a)
-            print(q_s_a_d)
-            print(current_q)
-            print(q_s_a[idx])
-            print(reward)
+            current_q = tf.Variable(q_s_a[idx])
             if next_state is None:
                 current_q[action].assign(reward)
             else:
                 current_q[action].assign(reward + GAMMA * np.amax(q_s_a_d[idx]))
-            states[idx] = state
-            actions[idx] = current_q
-        self._model.train_batch(states, actions)
+            print(x)
+            print(y)
+            print(current_q)
+            x[idx] = state
+            y[idx] = current_q
+        self._model.train_batch(x, y)
 
     def run(self):
         state = self._environment._reset()
@@ -62,6 +59,7 @@ class Runner():
         max_x = -100
         while self._episodes:
             action = self._choose_action(state)
+            print(action)
             next_state, reward, done, info = self._environment._step(action)
             if done:
                 next_state = None
@@ -137,7 +135,7 @@ class Quake2Env(gym.Env):
         else:
             self._connector.connect(self._address, self._port, \
                                    self._headless)
-        return np.zeros((1, 14), dtype=int)
+        return np.zeros((14), dtype=int)
 
 class Memory:
     def __init__(self, max_memory):
@@ -171,7 +169,8 @@ class Model:
         self._fully_connected_layer_1 = None 
         self._fully_connected_layer_2 = None 
         self._q_s_a = tf.Variable(initial_value=\
-                                  tf.convert_to_tensor(np.random.normal(size=(14,))))
+                                  tf.convert_to_tensor(\
+                                    np.random.normal(size=(self.num_actions,))))
 
     def _eval(self, tensor):
         self._fully_connected_layer_1 = \
@@ -187,6 +186,7 @@ class Model:
         return self._logits
 
     def predict_batch(self, states):
+        print(states)
         tensor = tf.convert_to_tensor(states)
         self._eval(tensor)
         return self._logits
