@@ -46,11 +46,8 @@ class Runner():
                 current_q[action].assign(reward)
             else:
                 current_q[action].assign(reward + GAMMA * np.amax(q_s_a_d[idx]))
-            print(x)
-            print(y)
-            print(current_q)
             x[idx] = state
-            y[idx] = current_q
+            y[idx] = current_q.numpy()
         self._model.train_batch(x, y)
 
     def run(self):
@@ -186,18 +183,15 @@ class Model:
         return self._logits
 
     def predict_batch(self, states):
-        print(states)
         tensor = tf.convert_to_tensor(states)
         self._eval(tensor)
         return self._logits
 
-    @tf.function
     def train_batch(self, x_batch, y_batch):
-        with tf.GradientTape() as tape:
-            tensor = tf.convert_to_tensor(x_batch)
-            self._eval(tensor)
-            loss = tf.keras.losses.mean_squared_error(self._q_s_a, self._logits)
-
-        gradients = tape.gradient(loss, self._logits)
+        tensor_x = tf.convert_to_tensor(x_batch)
+        tensor_y = tf.convert_to_tensor(y_batch)
+        mse = tf.keras.losses.MeanSquaredError()
+        self._eval(tensor_x)
         self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.1)
-        self._optimizer.minimize(loss, var_list=[self._q_s_a])
+        self._optimizer.minimize(lambda: mse(self._q_s_a, tensor_y), \
+                                 var_list=[self._q_s_a])
