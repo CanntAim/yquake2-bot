@@ -604,6 +604,9 @@ CL_InitLocal(void)
 	Cmd_AddCommand("listentities", NULL);
 	Cmd_AddCommand("teleport", NULL);
 	Cmd_AddCommand("cycleweap", NULL);
+
+	/* Client unit-test */
+	Cmd_AddCommand("rununittests", RunTests);
 }
 
 /*

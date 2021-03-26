@@ -272,6 +272,13 @@ else ifeq ($(YQ2_OSTYPE),Windows)
 LDFLAGS ?= -L/usr/lib
 endif
 
+# CMocka LDFLAGS and option.
+ifeq ($(ENABLE_UNITTEST_MOCKS),1)
+LDFLAGS += -lcmocka -Wl,--wrap=write
+else
+LDFLAGS += -lcmocka
+endif
+
 # Required libraries.
 ifeq ($(YQ2_OSTYPE),Linux)
 override LDFLAGS += -lm -ldl -rdynamic

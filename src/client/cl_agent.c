@@ -24,6 +24,11 @@
  * =======================================================================
  */
 
+
+#include <stdarg.h>
+#include <stddef.h>
+#include <setjmp.h>
+#include <cmocka.h>
 #include "header/client.h"
 
 qboolean Learn = false;
@@ -441,4 +446,64 @@ char *rtrim(char *s)
 char *trim(char *s)
 {
   return rtrim(ltrim(s)); 
+}
+
+/* Test cases for the RL agent methods */
+
+ssize_t __wrap_write(int fd, const void *buf, size_t count);
+ssize_t __wrap_write(int fd, const void *buf, size_t count)
+{
+  printf("HELLO WORLD!");
+  ssize_t byteSize;
+  check_expected_ptr(buf);
+  byteSize = mock_type(int);
+  return byteSize;
+}
+
+static void NullTestSuccess(void **state) {
+  (void) state;
+}
+
+static void TestTrim(void **state) {
+  char str[50] = "  test  ";
+  char *strTrimmed = trim(str);
+  assert_string_equal("test", strTrimmed);
+}
+
+static void TestTrimLeft(void **state) {
+  char str[50] = "  test  ";
+  char *strTrimmed = ltrim(str);
+  assert_string_equal("test  ", strTrimmed);
+}
+
+static void TestTrimRight(void **state) {
+  char str[50] = "  test  ";
+  char *strTrimmed = rtrim(str);
+  assert_string_equal("  test", strTrimmed);
+}
+
+static void TestGymMessageToBuffer(void **state) {
+  printf("HELLO WORLD!");
+  char str[10000];
+  message_t message;
+  message.playerPositionX = 2;
+  message.playerPositionY = 2;
+
+  //will_return(__wrap_write, 42);
+  //expect_string(__wrap_write, buf, "0");
+  
+  GymMessageToBuffer(message, str);
+  assert_int_equal(message.playerPositionX, 2);
+  assert_int_equal(message.playerPositionX, 2);
+}
+
+int RunTests(void) {
+  const struct CMUnitTest tests[] = {
+    cmocka_unit_test(NullTestSuccess),
+    cmocka_unit_test(TestTrim),
+    cmocka_unit_test(TestTrimLeft),
+    cmocka_unit_test(TestTrimRight),
+    cmocka_unit_test(TestGymMessageToBuffer)
+  };
+  return cmocka_run_group_tests(tests, NULL, NULL);
 }
