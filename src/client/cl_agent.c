@@ -24,9 +24,9 @@
  * =======================================================================
  */
 
-
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <setjmp.h>
 #include <cmocka.h>
 #include "header/client.h"
@@ -449,7 +449,6 @@ char *trim(char *s)
 }
 
 /* Test cases for the RL agent methods */
-
 ssize_t __wrap_write(int fd, const void *buf, size_t count);
 ssize_t __wrap_write(int fd, const void *buf, size_t count)
 {
@@ -483,18 +482,19 @@ static void TestTrimRight(void **state) {
 }
 
 static void TestGymMessageToBuffer(void **state) {
+  (void) state;
   printf("HELLO WORLD!");
   char str[10000];
   message_t message;
   message.playerPositionX = 2;
   message.playerPositionY = 2;
 
-  //will_return(__wrap_write, 42);
-  //expect_string(__wrap_write, buf, "0");
-  
+  will_return(__wrap_write, 42);
+  expect_string(__wrap_write, buf, "0");
+  //write(conncl, str, strlen(str));
   GymMessageToBuffer(message, str);
-  assert_int_equal(message.playerPositionX, 2);
-  assert_int_equal(message.playerPositionX, 2);
+  assert_float_equal(message.playerPositionX, 2.0, 1.0);
+  assert_float_equal(message.playerPositionX, 2.0, 1.0);
 }
 
 int RunTests(void) {
