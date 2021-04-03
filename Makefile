@@ -715,6 +715,7 @@ CLIENT_OBJS_ := \
 	src/client/cl_tempentities.o \
 	src/client/cl_view.o \
 	src/client/cl_agent.o \
+        src/client/test/cl_test_agent.o \
 	src/client/curl/download.o \
 	src/client/curl/qcurl.o \
 	src/client/input/sdl.o \
