@@ -605,8 +605,10 @@ CL_InitLocal(void)
 	Cmd_AddCommand("teleport", NULL);
 	Cmd_AddCommand("cycleweap", NULL);
 
-	/* Client unit-test */
+/* Client unit-test */
+#ifdef RUNTESTS_EXISTS
 	Cmd_AddCommand("rununittests", RunTests);
+#endif
 }
 
 /*

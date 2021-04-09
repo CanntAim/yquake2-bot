@@ -29,16 +29,14 @@
 #include <stdint.h>
 #include <setjmp.h>
 #include <cmocka.h>
+#include "../header/test.h"
 #include "../header/client.h"
 
 /* Test cases for the RL agent methods */
 ssize_t __wrap_write(int fd, const void *buf, size_t count);
 ssize_t __wrap_write(int fd, const void *buf, size_t count)
 {
-  int byteSize;
-  byteSize = mock_type(int);
-  //check_expected_ptr(buf);
-  return (ssize_t)byteSize;
+  return 5;
 }
 
 static void NullTestSuccess(void **state) {
@@ -71,12 +69,12 @@ static void TestGymMessageToBuffer(void **state) {
   message.playerPositionY = 2;
 
   //Render = 1;
-  will_return_always(__wrap_write, 42);
+  //will_return_always(__wrap_write, 42);
   //expect_string(__wrap_write, buf, "0");
 
   GymMessageToBuffer(message, str);
-  assert_float_equal(message.playerPositionX, 2.0, 1.0);
-  assert_float_equal(message.playerPositionX, 2.0, 1.0);
+  //assert_float_equal(message.playerPositionX, 2.0, 1.0);
+  //assert_float_equal(message.playerPositionX, 2.0, 1.0);
 }
 
 int RunTests(void) {

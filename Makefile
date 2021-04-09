@@ -715,7 +715,6 @@ CLIENT_OBJS_ := \
 	src/client/cl_tempentities.o \
 	src/client/cl_view.o \
 	src/client/cl_agent.o \
-        src/client/test/cl_test_agent.o \
 	src/client/curl/download.o \
 	src/client/curl/qcurl.o \
 	src/client/input/sdl.o \
@@ -775,6 +774,11 @@ CLIENT_OBJS_ += \
 	src/backends/unix/signalhandler.o \
 	src/backends/unix/system.o \
 	src/backends/unix/shared/hunk.o
+endif
+
+ifeq ($(ENABLE_UNITTEST_MOCKS),1)
+CLIENT_OBJS_ += \
+	src/client/test/cl_test_agent.o
 endif
 
 # ----------
