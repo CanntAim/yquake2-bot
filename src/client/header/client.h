@@ -587,6 +587,4 @@ qboolean GymRender(void);
 char *ltrim(char *s);
 char *rtrim(char *s);
 char *trim(char *s);
-int RunTests(void);
-//void NullTestSucess(void **state);
 #endif

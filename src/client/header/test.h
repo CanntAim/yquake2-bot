@@ -27,5 +27,8 @@
 
 #ifndef CL_CLIENTTEST_H
 #define CL_CLIENTTEST_H
+
 #define RUNTESTS_EXISTS
+
+int RunTests(void);
 #endif

@@ -25,7 +25,9 @@
  * =======================================================================
  */
 
-#include "header/client.h"
+//#include "header/test.h"
+#include "test/cl_test_agent.c"
+//#include "header/client.h"
 #include "input/header/input.h"
 
 void CL_ForwardToServer_f(void);
