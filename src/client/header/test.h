@@ -28,7 +28,5 @@
 #ifndef CL_CLIENTTEST_H
 #define CL_CLIENTTEST_H
 
-#define RUNTESTS_EXISTS
-
-int RunTests(void);
+int RunTests(void)  __attribute__((weak));
 #endif

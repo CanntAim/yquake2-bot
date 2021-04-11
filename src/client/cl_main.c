@@ -25,9 +25,8 @@
  * =======================================================================
  */
 
-//#include "header/test.h"
-#include "test/cl_test_agent.c"
-//#include "header/client.h"
+#include "header/test.h"
+#include "header/client.h"
 #include "input/header/input.h"
 
 void CL_ForwardToServer_f(void);
@@ -607,10 +606,10 @@ CL_InitLocal(void)
 	Cmd_AddCommand("teleport", NULL);
 	Cmd_AddCommand("cycleweap", NULL);
 
-/* Client unit-test */
-#ifdef RUNTESTS_EXISTS
-	Cmd_AddCommand("rununittests", RunTests);
-#endif
+	/* Client unit-test */
+	if (RunTests) {
+	  Cmd_AddCommand("rununittests", RunTests);
+	}
 }
 
 /*
