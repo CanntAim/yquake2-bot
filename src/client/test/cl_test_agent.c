@@ -32,11 +32,30 @@
 #include "../header/test.h"
 #include "../header/client.h"
 
+
+message_t TestMessage(){
+  message_t message;
+  message.playerPositionX = -99999.0;
+  message.playerPositionY = -99999.0;
+  message.playerPositionZ = -99999.0;
+  message.playerViewAngleX = -99999.0;
+  message.playerViewAngleY = -99999.0;
+  message.playerViewAngleZ = -99999.0;
+  message.time = -1;
+  message.frags = -1;
+  message.enemyLooking = -1;
+  message.enemyPositionX = -99999.0;
+  message.enemyPositionY = -99999.0;
+  message.enemyPositionZ = -99999.0;
+  message.projectileDistance = -99999.0;
+  return message;
+}
+
 /* Test cases for the RL agent methods */
 ssize_t __wrap_write(int fd, const void *buf, size_t count);
 ssize_t __wrap_write(int fd, const void *buf, size_t count)
 {
-  return 5;
+  return (ssize_t)mock_type(int);
 }
 
 static void NullTestSuccess(void **state) {
@@ -62,16 +81,15 @@ static void TestTrimRight(void **state) {
 }
 
 static void TestGymMessageToBuffer(void **state) {
-  (void) state;
   char str[10000];
-  message_t message;
+  message_t message = TestMessage();
+  int expected = sizeof(str);
   message.playerPositionX = 2;
   message.playerPositionY = 2;
-
-  //Render = 1;
-  //will_return_always(__wrap_write, 42);
-  //expect_string(__wrap_write, buf, "0");
-
+ 
+  GymReadySet(true);
+  will_return(__wrap_write, expected);
+  
   GymMessageToBuffer(message, str);
   //assert_float_equal(message.playerPositionX, 2.0, 1.0);
   //assert_float_equal(message.playerPositionX, 2.0, 1.0);

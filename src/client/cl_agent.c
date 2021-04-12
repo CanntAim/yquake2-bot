@@ -104,6 +104,16 @@ GymRender(){
   return Render;
 }
 
+
+qboolean
+GymReady(){
+  return Ready;
+}
+
+void GymReadySet(qboolean ready){
+  Ready = ready;
+}
+
 void*
 GymOpenSocket(void *args){
   struct sockaddr_un addr;
@@ -419,7 +429,7 @@ void GymMessageToBuffer(message_t message, char buf[10000])
 	  message.enemyPositionY,
 	  message.enemyPositionZ,
 	  message.projectileDistance);
-  if (1) {
+  if (Ready) {
     write(conncl, buf, strlen(buf)); 
   }
 }

@@ -583,6 +583,8 @@ void GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float f
 int GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]);
 int GymCheckIfIsVisibleCL(float source[3], float dest[3]);
 float GymCheckDistanceTo(float source[3], float dest[3]);
+void GymReadyEnable(void);
+qboolean GymReady(void);
 qboolean GymRender(void);
 char *ltrim(char *s);
 char *rtrim(char *s);
