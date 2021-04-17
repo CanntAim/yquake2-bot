@@ -91,8 +91,8 @@ static void TestGymMessageToBuffer(void **state) {
   will_return(__wrap_write, expected);
   
   GymMessageToBuffer(message, str);
-  //assert_float_equal(message.playerPositionX, 2.0, 1.0);
-  //assert_float_equal(message.playerPositionX, 2.0, 1.0);
+  assert_float_equal(message.playerPositionX, 2.0, 1.0);
+  assert_float_equal(message.playerPositionX, 2.0, 1.0);
 }
 
 int RunTests(void) {
