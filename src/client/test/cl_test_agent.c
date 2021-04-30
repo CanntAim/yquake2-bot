@@ -33,16 +33,54 @@
 #include "../header/client.h"
 #include "../sound/header/local.h"
 
+player_state_t TestPlayerState(){
+  player_state_t player_state;
+
+  player_state.viewangles[0] = 0.0;
+  player_state.viewangles[1] = 0.0;
+  player_state.viewangles[2] = 0.0;
+
+  player_state.viewoffset[0] = 0.0;
+  player_state.viewoffset[1] = 0.0;
+  player_state.viewoffset[2] = 0.0;
+
+  player_state.kick_angles[0] = 0.0;
+  player_state.kick_angles[1] = 0.0;
+  player_state.kick_angles[2] = 0.0;
+
+  player_state.gunangles[0] = 0.0;
+  player_state.gunangles[1] = 0.0;
+  player_state.gunangles[2] = 0.0;
+
+  player_state.gunoffset[0] = 0.0;
+  player_state.gunoffset[1] = 0.0;
+  player_state.gunoffset[2] = 0.0;
+
+  player_state.gunindex = 0;
+  player_state.gunframe = 0;
+
+  player_state.blend[0] = 0;
+  player_state.blend[1] = 0;
+  player_state.blend[2] = 0;
+  player_state.blend[3] = 0;
+
+  player_state.fov = 0;
+  player_state.rdflags = 0;
+
+  player_state.stats[STAT_HEALTH] = 100;
+  player_state.stats[STAT_ARMOR] = 100;
+  player_state.stats[STAT_TIMER] = 100;
+  player_state.stats[STAT_FRAGS] = 100;
+  player_state.stats[STAT_ARMOR_ICON] = 5;
+  player_state.stats[STAT_AMMO_ICON] = 5;
+
+  return player_state;
+}
+
 entity_t TestEntity(){
   entity_t entity;
-  model_t mock_model;
-  skin_t mock_skin;
-
-  mock_skin.test = 1;
-  mock_model.test = 1;
-  
-  entity.model = &mock_model;
-  entity.skin = &mock_skin;
+  char *test = "test";
+  R_RegisterModel(test);
 
   entity.angles[0] = 0.0;
   entity.angles[1] = 0.0;
@@ -95,43 +133,30 @@ refdef_t TestRefDef(){
   refdef.time = 0.0;
   refdef.rdflags= 0;
 
-  refdef.num_entities = 10;
+  refdef.num_entities = 4;
   refdef.num_dlights = 10;
   refdef.num_particles = 10;
   refdef.areabits = &areabits;
   memcpy(refdef.areabits, "1", 1);
+
+  entity_t entities[refdef.num_entities];
+  entities[0] = TestEntity();
+  entities[1] = TestEntity();
+  entities[2] = TestEntity(); 
+  entities[3] = TestEntity();
+  refdef.entities = entities;
+
   return refdef;
-}
-
-sfxcache_t *TestSfxCache(){
-  sfxcache_t cache; 
-  cache.length = 10;
-  cache.loopstart = 10;
-  cache.speed = 10;
-  cache.width = 10;
-  cache.size = 10;
-  cache.bufnum = 10;
-  cache.stereo = 1;
-
-  memcpy(cache.data, "1", 1);
-  return &cache;
-}
-
-sfx_t *TestSfx(){ 
-  sfx_t sfx;
-  sfx.cache = TestSfxCache();
-  sfx.registration_sequence = 5;
-  sfx.truename = "test";
-
-  memcpy(sfx.name, "test", 5);
-  return &sfx;
 }
 
 channel_t TestChannel(){ 
   channel_t channel;
+  sfxcache_t cache;
   sfx_t sfx;
+
   channel.sfx = &sfx;
   channel.sfx->registration_sequence = 5;
+  channel.sfx->cache = &cache;
   channel.sfx->cache->length = 10;
   channel.sfx->cache->loopstart = 10;
   channel.sfx->cache->speed = 10;
@@ -179,8 +204,6 @@ message_t TestMessage(){
   return message;
 }
 
-
-
 /* Test cases for the RL agent methods */
 ssize_t __wrap_write(int fd, const void *buf, size_t count);
 ssize_t __wrap_write(int fd, const void *buf, size_t count)
@@ -210,6 +233,13 @@ static void TestTrimRight(void **state) {
   assert_string_equal("  test", strTrimmed);
 }
 
+static void TestGymCaptureCurrentPlayerViewStateCL(void **state) {
+  refdef_t refdef = TestRefDef();
+  player_state_t playerstate = TestPlayerState();
+
+  GymCaptureCurrentPlayerViewStateCL(refdef, playerstate);
+}
+
 static void TestGymCaptureCurrentPlayerSoundStateCL(void **state) {
   channel_t channel = TestChannel();
  
@@ -226,11 +256,11 @@ static void TestGymMessageToBuffer(void **state) {
   message.playerPositionX = 2;
   message.playerPositionY = 2;
   GymReadySet(true);
- 
+
   char str[10000];
   int expected = sizeof(str);
   will_return(__wrap_write, expected);
-  
+
   GymMessageToBuffer(message, str);
   //assert_float_equal(message.playerPositionX, 2.0, 1.0);
   //assert_float_equal(message.playerPositionX, 2.0, 1.0);
@@ -243,7 +273,8 @@ int RunTests(void) {
     cmocka_unit_test(TestTrimLeft),
     cmocka_unit_test(TestTrimRight),
     cmocka_unit_test(TestGymMessageToBuffer),
-    cmocka_unit_test(TestGymCaptureCurrentPlayerSoundStateCL)
+    cmocka_unit_test(TestGymCaptureCurrentPlayerSoundStateCL),
+    cmocka_unit_test(TestGymCaptureCurrentPlayerViewStateCL)
   };
   return cmocka_run_group_tests(tests, NULL, NULL);
 }

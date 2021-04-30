@@ -104,10 +104,13 @@ GymRender(){
   return Render;
 }
 
-
 qboolean
 GymReady(){
   return Ready;
+}
+
+char *GymModel(entity_t *entity){
+  return (char*)entity->model;
 }
 
 void GymReadySet(qboolean ready){
@@ -205,7 +208,6 @@ GymOpenSocket(void *args){
 
 void
 GymCapturePlayerStateCL(refdef_t refdef, player_state_t state){
-  /* Seperate frame */
   if(!SilentPlayerStateCapture){
     printf("...\n");
     printf("...Current View:\n");
@@ -241,22 +243,26 @@ GymCapturePlayerStateCL(refdef_t refdef, player_state_t state){
 
 void
 GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
+  printf("...front...\n");
   int front = GymCheckIfInFrontCL(refdef.viewangles,
 					 refdef.vieworg,
 					 entity->origin);
 
+  printf("...looking...\n");
   int looking = GymCheckIfInFrontCL(entity->angles,
 					   entity->origin,
 					   refdef.vieworg);
 
+  printf("...visible...\n");
   int visible = GymCheckIfIsVisibleCL(refdef.vieworg,
 					   entity->origin);
 
+  printf("...distance...\n");
   float distance = GymCheckDistanceTo(refdef.vieworg,
 				      entity->origin);
   
   if(!SilentEntityCapture){
-    printf("drawing entity: %s ...x: %f ...y: %f ...z: %f\n", (char*)entity->model,
+    printf("drawing entity: %s ...x: %f ...y: %f ...z: %f\n", GymModel(entity),
 	   entity->origin[0],
 	   entity->origin[1],
 	   entity->origin[2]);
@@ -265,10 +271,13 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
     printf("Entity looking at player: %d\n", looking);
   }
 
-  const char *actual = (char*)entity->model;
+  printf("...actual...\n");
+  const char *actual = GymModel(entity);
   const char *player = "dmspot";
   const char *rocket = "rocket";
   const char *grenade = "grenade";
+  printf("...remaining...\n");
+  printf("%s\n", actual);
   if(strstr(actual, player) != NULL && front && visible) {
     Message.enemyLooking = looking;
     Message.enemyPositionX = entity->origin[0];
@@ -372,7 +381,6 @@ GymDisplayFPS(float fps)
 void
 GymCaptureCurrentPlayerViewStateCL(refdef_t refdef, player_state_t state)
 {
-  /* Start server */
   GymStartServer();
 
   char buf[10000];

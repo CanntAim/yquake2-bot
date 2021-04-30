@@ -28,16 +28,5 @@
 #ifndef CL_CLIENTTEST_H
 #define CL_CLIENTTEST_H
 
-typedef struct model_s
-{
-  int test;
-} model_t;
-
-
-typedef struct skin_s
-{
-  int test;
-} skin_t;
-
 int RunTests(void)  __attribute__((weak));
 #endif

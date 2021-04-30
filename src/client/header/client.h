@@ -586,6 +586,7 @@ float GymCheckDistanceTo(float source[3], float dest[3]);
 void GymReadyEnable(void);
 qboolean GymReady(void);
 qboolean GymRender(void);
+char *GymModel(entity_t *entity);
 char *ltrim(char *s);
 char *rtrim(char *s);
 char *trim(char *s);
