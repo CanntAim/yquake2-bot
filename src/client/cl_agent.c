@@ -63,7 +63,7 @@ GymInitializeMessage(){
 
 void
 GymStartGameServerAndSetRules(char startmap[1024], float timelimit, float fraglimit,
-	    float maxclients, char hostname[1024])
+			      float maxclients, char hostname[1024])
 {
   strncpy(Map, startmap, 1024);  
   Cvar_SetValue("maxclients", maxclients);
@@ -110,6 +110,7 @@ GymReady(){
 }
 
 char *GymModel(entity_t *entity){
+  printf("BLARG!");
   return (char*)entity->model;
 }
 
@@ -276,8 +277,8 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
   const char *player = "dmspot";
   const char *rocket = "rocket";
   const char *grenade = "grenade";
-  printf("...remaining...\n");
   printf("%s\n", actual);
+  printf("...remaining...\n");
   if(strstr(actual, player) != NULL && front && visible) {
     Message.enemyLooking = looking;
     Message.enemyPositionX = entity->origin[0];
@@ -307,10 +308,9 @@ GymCheckIfIsVisibleCL(float source[3], float dest[3]){
   trace_t trace;
 
   trace = CM_BoxTrace(source_vec, dest_vec, vec3_origin, vec3_origin, 0, MASK_OPAQUE);
-  if (trace.fraction == 1.0)
-    {
-      return 1;
-    }
+  if (trace.fraction == 1.0) {
+    return 1;
+  }
   return 0;
 }
 
@@ -344,10 +344,9 @@ GymCheckIfInFrontCL(float view[3], float source[3], float dest[3]){
   VectorNormalize(result_vec);
   dot = DotProduct(result_vec, forward_vec);
 
-  if (dot > 0.3)
-    {
-      return 1;
-    }
+  if (dot > 0.3) {
+    return 1;
+  }
 
   return 0;
 }

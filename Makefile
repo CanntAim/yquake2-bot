@@ -274,7 +274,7 @@ endif
 
 # CMocka LDFLAGS and option.
 ifeq ($(ENABLE_UNITTEST_MOCKS),1)
-LDFLAGS += -lcmocka -Wl,--wrap=write
+LDFLAGS += -lcmocka -Wl,--wrap=write,--wrap=GymModel
 endif
 
 # Required libraries.

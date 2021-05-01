@@ -208,11 +208,15 @@ message_t TestMessage(){
 ssize_t __wrap_write(int fd, const void *buf, size_t count);
 ssize_t __wrap_write(int fd, const void *buf, size_t count)
 {
+  printf("BLAH!");
   return (ssize_t)mock_type(int);
 }
 
-static void NullTestSuccess(void **state) {
-  (void) state;
+char *__wrap_GymModel(entity_t *entity);
+char *__wrap_GymModel(entity_t *entity)
+{
+  printf("BLAH!");
+  return mock_type(char);
 }
 
 static void TestTrim(void **state) {
@@ -237,6 +241,9 @@ static void TestGymCaptureCurrentPlayerViewStateCL(void **state) {
   refdef_t refdef = TestRefDef();
   player_state_t playerstate = TestPlayerState();
 
+  char str[4];
+  will_return(__wrap_GymModel, str);
+ 
   GymCaptureCurrentPlayerViewStateCL(refdef, playerstate);
 }
 
@@ -268,7 +275,6 @@ static void TestGymMessageToBuffer(void **state) {
 
 int RunTests(void) {
   const struct CMUnitTest tests[] = {
-    cmocka_unit_test(NullTestSuccess),
     cmocka_unit_test(TestTrim),
     cmocka_unit_test(TestTrimLeft),
     cmocka_unit_test(TestTrimRight),
