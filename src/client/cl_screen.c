@@ -26,6 +26,7 @@
  */
 
 #include "header/client.h"
+#include "header/test.h"
 
 float scr_con_current; /* aproaches scr_conlines at scr_conspeed */
 float scr_conlines; /* 0.0 to 1.0 lines of console to display */
@@ -607,6 +608,9 @@ SCR_BeginLoadingPlaque(void)
 	SCR_StopCinematic();
 	cls.disable_screen = Sys_Milliseconds();
 	cls.disable_servercount = cl.servercount;
+	if(RunTests) {
+	        Con_ToggleConsole_f();
+	}
 }
 
 void

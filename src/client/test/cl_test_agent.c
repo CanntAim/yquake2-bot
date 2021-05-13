@@ -208,15 +208,12 @@ message_t TestMessage(){
 ssize_t __wrap_write(int fd, const void *buf, size_t count);
 ssize_t __wrap_write(int fd, const void *buf, size_t count)
 {
-  printf("BLAH!");
   return (ssize_t)mock_type(int);
 }
 
-char *__wrap_GymModel(entity_t *entity);
-char *__wrap_GymModel(entity_t *entity)
+char *GymModel(entity_t *entity)
 {
-  printf("BLAH!");
-  return mock_type(char);
+  return mock_type(char*);
 }
 
 static void TestTrim(void **state) {
@@ -237,13 +234,77 @@ static void TestTrimRight(void **state) {
   assert_string_equal("  test", strTrimmed);
 }
 
+static void TestGymCheckIfIsVisibleCL(void **state) {
+  float source[3];
+  float dest[3];
+
+  source[0] = 5.0;
+  source[1] = 5.0;
+  source[2] = 5.0;
+
+  dest[0] = 6.0;
+  dest[1] = 6.0;
+  dest[2] = 6.0;
+
+  assert_int_equal(GymCheckIfIsVisibleCL(source, dest), 1);
+}
+
+static void TestGymCheckIfInFrontCL(void **state) {
+  float source[3];
+  float dest[3];
+  float view[3];
+
+  source[0] = 5.0;
+  source[1] = 5.0;
+  source[2] = 5.0;
+
+  dest[0] = 6.0;
+  dest[1] = 6.0;
+  dest[2] = 6.0;
+
+  view[0] =  2.0;
+  view[1] =  2.0;
+  view[2] =  2.0;
+
+  assert_int_equal(GymCheckIfInFrontCL(view, source, dest), 1);
+}
+
+static void TestGymCheckDistanceTo(void **state) {
+  float source[3];
+  float dest[3];
+
+  source[0] = 5.0;
+  source[1] = 5.0;
+  source[2] = 5.0;
+
+  dest[0] = 10.0;
+  dest[1] = 10.0;
+  dest[2] = 10.0;
+
+  assert_int_equal(GymCheckDistanceTo(source, dest), 8);
+}
+
+static void TestGymStartGameServerAndSetRules(void **state) {
+  char* startmap = "bottrain";
+  float timelimit = 10.0;
+  float fraglimit = 10.0;
+  float maxclients = 10.0;
+  char* hostname = "localhost";
+
+  GymStartGameServerAndSetRules(startmap, timelimit,
+				fraglimit, maxclients,
+				hostname);
+}
+
 static void TestGymCaptureCurrentPlayerViewStateCL(void **state) {
   refdef_t refdef = TestRefDef();
   player_state_t playerstate = TestPlayerState();
 
-  char str[4];
-  will_return(__wrap_GymModel, str);
- 
+  char str[10000];
+  int expected = sizeof(str);
+  will_return(__wrap_write, expected);
+  will_return_always(GymModel, "test");
+
   GymCaptureCurrentPlayerViewStateCL(refdef, playerstate);
 }
 
@@ -280,7 +341,11 @@ int RunTests(void) {
     cmocka_unit_test(TestTrimRight),
     cmocka_unit_test(TestGymMessageToBuffer),
     cmocka_unit_test(TestGymCaptureCurrentPlayerSoundStateCL),
-    cmocka_unit_test(TestGymCaptureCurrentPlayerViewStateCL)
+    cmocka_unit_test(TestGymCaptureCurrentPlayerViewStateCL),
+    cmocka_unit_test(TestGymCheckIfIsVisibleCL),
+    cmocka_unit_test(TestGymCheckIfInFrontCL),
+    cmocka_unit_test(TestGymCheckDistanceTo)
+  //cmocka_unit_test(TestGymStartGameServerAndSetRules)
   };
   return cmocka_run_group_tests(tests, NULL, NULL);
 }

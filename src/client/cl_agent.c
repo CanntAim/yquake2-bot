@@ -109,12 +109,12 @@ GymReady(){
   return Ready;
 }
 
-char *GymModel(entity_t *entity){
-  printf("BLARG!");
+__attribute__((weak))
+char *GymModel(entity_t *entity) {
   return (char*)entity->model;
 }
 
-void GymReadySet(qboolean ready){
+void GymReadySet(qboolean ready) {
   Ready = ready;
 }
 
@@ -244,21 +244,17 @@ GymCapturePlayerStateCL(refdef_t refdef, player_state_t state){
 
 void
 GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
-  printf("...front...\n");
   int front = GymCheckIfInFrontCL(refdef.viewangles,
 					 refdef.vieworg,
 					 entity->origin);
 
-  printf("...looking...\n");
   int looking = GymCheckIfInFrontCL(entity->angles,
 					   entity->origin,
 					   refdef.vieworg);
 
-  printf("...visible...\n");
   int visible = GymCheckIfIsVisibleCL(refdef.vieworg,
 					   entity->origin);
 
-  printf("...distance...\n");
   float distance = GymCheckDistanceTo(refdef.vieworg,
 				      entity->origin);
   
@@ -272,13 +268,10 @@ GymCaptureEntityStateCL(refdef_t refdef, entity_t *entity, float prior){
     printf("Entity looking at player: %d\n", looking);
   }
 
-  printf("...actual...\n");
   const char *actual = GymModel(entity);
   const char *player = "dmspot";
   const char *rocket = "rocket";
   const char *grenade = "grenade";
-  printf("%s\n", actual);
-  printf("...remaining...\n");
   if(strstr(actual, player) != NULL && front && visible) {
     Message.enemyLooking = looking;
     Message.enemyPositionX = entity->origin[0];
