@@ -1,0 +1,8 @@
+[remote:vars]
+ansible_user=vanya
+
+[node-1]
+127.0.0.1
+
+[nodes:children]
+node-1
