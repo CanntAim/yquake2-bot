@@ -1,0 +1,52 @@
+---
+- hosts: nodes
+  become: yes
+  vars:
+    container_enumeration:
+      - 1
+      - 2
+  tasks:
+   - name: install snapd
+     apt:
+       name: snapd
+       state: latest
+   - name: install snap core - might need to be installed manually
+     snap:
+       name: core
+       channel: stable
+   - name: install snap core18
+     snap:
+       name: core18
+       channel: stable
+   - name: reset cluster - purge snap lxd
+     command: snap remove lxd --purge
+   - name: reset cluster - install snap lxd
+     snap:
+       name: lxd
+       channel: stable
+   - name: initialize lxd cluster - coordinator
+     shell: cat setup_coordinator.yml | /snap/bin/lxd init --preseed
+     when: "groups['node-1'] | select('search', inventory_hostname) | list"
+   - name: initialize lxd cluster - joining nodes
+     command: cat setup_node.yml | /snap/bin/lxd init --preseed
+     when: not "groups['node-1'] | select('search', inventory_hostname) | list"
+   - name: initialize lxc network
+     command: /snap/bin/lxc network create main
+   - name: initialize lxc containers
+     command: /snap/bin/lxc launch images:ubuntu/18.04 {{ group_names[0] }}-container-{{ item }}
+     loop: "{{ container_enumeration }}"
+   - name: attach lxc containers to network
+     command: /snap/bin/lxc network attach main {{ group_names[0] }}-container-{{ item }} eth0
+     loop: "{{ container_enumeration }}"
+   - name: lxc containers - setup system dependencies
+     command: /snap/bin/lxc exec {{ group_names[0] }}-container-{{ item }} -- apt-get -y install build-essential libgl1-mesa-dev libsdl2-dev libogg-dev libvorbis-dev libopenal-dev zlib1g-dev git libcurl4-openssl-dev xvfb
+     loop: "{{ container_enumeration }}"
+   - name: lxc containers - git clone yquake2 and make release directory
+     command: /snap/bin/lxc exec {{ group_names[0] }}-container-{{ item }} -- sudo --login --user ubuntu bash -ilc "git clone https://github.com/CanntAim/yquake2-bot.git && mkdir yquake2-bot/release"
+     loop: "{{ container_enumeration }}"
+   - name: lxc containers - git pull target branch and build
+     command: /snap/bin/lxc exec {{ group_names[0] }}-container-{{ item }} -- sudo --login --user ubuntu bash -ilc "cd /home/ubuntu/yquake2-bot && git pull origin cluster-setup && make"
+     loop: "{{ container_enumeration }}"
+   - name: lxc containers - load assets
+     command: /snap/bin/lxc file push -r ../release/baseq2/* {{ group_names[0] }}-container-{{item}} /home/ubuntu/yquake2-bot/release/baseq2
+     loop: "{{ container_enumeration }}"

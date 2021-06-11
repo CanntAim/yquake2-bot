@@ -1,5 +1,5 @@
 ---
-- hosts: coordinator
+- hosts: nodes
   vars:
     container_enumeration:
       - 1

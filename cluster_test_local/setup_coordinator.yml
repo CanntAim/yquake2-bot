@@ -1,0 +1,33 @@
+config:
+  core.https_address: 127.0.0.1:8443
+  core.trust_password: test
+networks: []
+storage_pools:
+- config:
+    size: 4GB
+  description: ""
+  name: local
+  driver: btrfs
+profiles:
+- config: {}
+  description: ""
+  devices:
+    eth0:
+      name: eth0
+      nictype: macvlan
+      parent: eth0
+      type: nic
+    root:
+      path: /
+      pool: local
+      type: disk
+  name: default
+projects: []
+cluster:
+  server_name: test-01
+  enabled: true
+  member_config: []
+  cluster_address: ""
+  cluster_certificate: ""
+  server_address: ""
+  cluster_password: ""
