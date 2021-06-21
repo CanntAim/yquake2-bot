@@ -4,7 +4,7 @@ config:
 networks: []
 storage_pools:
 - config:
-    size: 4GB
+    size: 8GB
   description: ""
   name: local
   driver: btrfs
@@ -15,7 +15,7 @@ profiles:
     eth0:
       name: eth0
       nictype: macvlan
-      parent: eth0
+      parent: wlp58s0
       type: nic
     root:
       path: /

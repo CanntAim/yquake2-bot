@@ -1,0 +1,18 @@
+---
+- hosts: nodes
+  become: yes
+  tasks:
+   - name: install snapd
+     apt:
+       name: snapd
+       state: latest
+   - name: install snap core - might need to be installed manually
+     snap:
+       name: core
+       channel: stable
+   - name: install snap core18
+     snap:
+       name: core18
+       channel: stable
+   - name: reset cluster - purge snap lxd
+     command: snap remove lxd --purge
