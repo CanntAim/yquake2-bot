@@ -1,42 +1,100 @@
 ---
 - hosts: nodes
+  become: yes
   vars:
-    container_enumeration:
-      - 1
-      - 2
-      - 3
-      - 4
+    end_at: 1
   tasks:
-   - name: install prereq snap
+   - name: install snapd
      apt:
        name: snapd
        state: latest
-   - name: install core snap
+   - name: install snap core - might need to be installed manually
      snap:
        name: core
-       state: latest
-   - name: install core18 snap
+       channel: stable
+   - name: install snap core18
      snap:
        name: core18
-       state: latest
-   - name: install lxd
+       channel: stable
+   - name: reset cluster - purge snap lxd
+     command: snap remove lxd --purge
+   - name: reset cluster - install snap lxd
      snap:
        name: lxd
-       state: latest
+       channel: stable
    - name: initialize lxd cluster - coordinator
-     command: cat setup_coordinator.yml | lxd init --preseed
-     when: inventory_hostname == node-1  
+     shell: cat setup_coordinator.yml | lxd init --preseed
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
+     when: "groups['node-1'] | select('search', inventory_hostname) | list"
    - name: initialize lxd cluster - joining nodes
      command: cat setup_node.yml | lxd init --preseed
-     when: inventory_hostname != node-1
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
+     when: not "groups['node-1'] | select('search', inventory_hostname) | list"
    - name: initialize lxc network
      command: lxc network create main
    - name: initialize lxc containers
-     command: lxc launch images:ubuntu/18.04 container_{{ inventory_hostname }}_{{ item }}
-     loop: "{{ container_enumeration }}"
-   - name: initialize lxc containers
-     command: lxc network attach main container_{{ inventory_hostname }}_{{ item }} eth0
-     loop: "{{ container_enumeration }}"
-   - name: setup lxc containers
-     command: lxc exec --cwd /home/ container_{{ inventory_hostname }}_{{ item }} -- apt-get -y install cmatrix
-     loop: "{{ container_enumeration }}"
+     command: lxc launch images:ubuntu/20.04 {{ group_names[0] }}-container-{{ item }}
+     with_sequence: start=1 end="{{ end_at }}"
+   - name: attach lxc containers to network
+     command: lxc network attach main {{ group_names[0] }}-container-{{ item }} eth0
+     with_sequence: start=1 end="{{ end_at }}"
+   - name: lxc containers - setup system dependencies - update
+     command: lxc exec {{ group_names[0] }}-container-{{ item }} -- apt-get update
+     with_sequence: start=1 end="{{ end_at }}"
+   - name: lxc containers - setup system dependencies - install
+     command: lxc exec {{ group_names[0] }}-container-{{ item }} -- apt-get -y install build-essential libgl1-mesa-dev libsdl2-dev libogg-dev libvorbis-dev libopenal-dev zlib1g-dev python3-dev git libcurl4-openssl-dev xvfb python3 python3-pip
+     with_sequence: start=1 end="{{ end_at }}"
+  #- name: lxc containers - disable ipv6 networking
+  #  command: lxc exec {{ group_names[0] }}-container-{{ item }} -- sudo --login --user ubuntu bash -ilc "sysctl -w net.ipv6.conf.all.disable_ipv6=1 && sysctl -w net.ipv6.conf.default.disable_ipv6=1 && sysctl -w net.ipv6.conf.lo.disable_ipv6=1"
+  #  with_sequence: start=1 end="{{ end_at }}"
+   - name: lxc containers - git clone yquake2 and make release directory
+     command: lxc exec {{ group_names[0] }}-container-{{ item }} -- sudo --login --user ubuntu bash -ilc "git clone https://github.com/CanntAim/yquake2-bot.git && mkdir yquake2-bot/release && mkdir --parents ~/.yq2/baseq2"
+     with_sequence: start=1 end="{{ end_at }}"
+   - name: lxc containers - git pull target branch and build
+     command: lxc exec {{ group_names[0] }}-container-{{ item }} -- sudo --login --user ubuntu bash -ilc "cd /home/ubuntu/yquake2-bot && git pull origin cluster-setup && make"
+     with_sequence: start=1 end="{{ end_at }}"
+   - name: lxc containers - pip installation of python wrapper
+     command: lxc exec {{ group_names[0] }}-container-{{ item }} -- sudo --login --user ubuntu bash -ilc "cd /home/ubuntu/yquake2-bot/gym && pip3 install -e ."
+     with_sequence: start=1 end="{{ end_at }}"
+   - name: lxc containers - load assets - pak0
+     command: lxc file push -r ../release/baseq2/pak0.pak {{ group_names[0] }}-container-{{item}}/home/ubuntu/yquake2-bot/release/baseq2
+     with_sequence: start=1 end="{{ end_at }}"
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
+   - name: lxc containers - load assets - pak1
+     command: lxc file push -r ../release/baseq2/pak1.pak {{ group_names[0] }}-container-{{item}}/home/ubuntu/yquake2-bot/release/baseq2
+     with_sequence: start=1 end="{{ end_at }}"
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
+   - name: lxc containers - load assets - pak2
+     command: lxc file push -r ../release/baseq2/pak2.pak {{ group_names[0] }}-container-{{item}}/home/ubuntu/yquake2-bot/release/baseq2
+     with_sequence: start=1 end="{{ end_at }}"
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
+   - name: lxc containers - load assets - players
+     command: lxc file push -r ../release/baseq2/players {{ group_names[0] }}-container-{{item}}/home/ubuntu/yquake2-bot/release/baseq2
+     with_sequence: start=1 end="{{ end_at }}"
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
+   - name: lxc containers - load assets - maps
+     command: lxc file push -r ../release/baseq2/maps {{ group_names[0] }}-container-{{item}}/home/ubuntu/yquake2-bot/release/baseq2
+     with_sequence: start=1 end="{{ end_at }}"
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
+   - name: lxc containers - load assets - maps list
+     command: lxc file push -r ../release/baseq2/maps.lst {{ group_names[0] }}-container-{{item}}/home/ubuntu/yquake2-bot/release/baseq2
+     with_sequence: start=1 end="{{ end_at }}"
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
+   - name: lxc containers - load assets - video
+     command: lxc file push -r ../release/baseq2/video {{ group_names[0] }}-container-{{item}}/home/ubuntu/yquake2-bot/release/baseq2
+     with_sequence: start=1 end="{{ end_at }}"
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
+   - name: lxc containers - load user config
+     command: lxc file push -r config.cfg {{ group_names[0] }}-container-{{item}}/home/ubuntu/.yq2/baseq2
+     with_sequence: start=1 end="{{ end_at }}"
+     args:
+       chdir: /yquake2-bot/cluster_test_virtual/
