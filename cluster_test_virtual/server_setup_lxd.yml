@@ -22,18 +22,48 @@
      snap:
        name: lxd
        channel: stable
+   - name: transfer current certificate to joining nodes
+     copy:
+       src: cluster.crt
+       dest: /yquake2-bot/cluster_test_virtual/cluster.crt
+     when: "not (groups['node-1'] | select('search', inventory_hostname) | list)"
+   - name: set `https_address` in config - setup_coordinator
+     lineinfile:
+       path: /yquake2-bot/cluster_test_virtual/setup_coordinator.yml
+       regexp: '^(.*)core.https_address: (.*)$'
+       line: '  core.https_address: {{ ansible_ssh_host }}:8443'
+     when: "groups['node-1'] | select('search', inventory_hostname) | list"
+   - name: set `server_address` in config - setup_node
+     lineinfile:
+       path: /yquake2-bot/cluster_test_virtual/setup_node.yml
+       regexp: '^(.*)server_address: (.*)$'
+       line: '  server_address: {{ ansible_ssh_host }}:8443'
+     when: "not (groups['node-1'] | select('search', inventory_hostname) | list)"
+   - name: set `server_name` in config - setup_coordinator
+     lineinfile:
+       path: /yquake2-bot/cluster_test_virtual/setup_coordinator.yml
+       regexp: '^(.*)server_name: (.*)$'
+       line: '  server_name: {{ ansible_hostname }}'
+     when: "groups['node-1'] | select('search', inventory_hostname) | list"
+   - name: set `server_name` in config - setup_node
+     lineinfile:
+       path: /yquake2-bot/cluster_test_virtual/setup_node.yml
+       regexp: '^(.*)server_name: (.*)$'
+       line: '  server_name: {{ ansible_hostname }}'
+     when: "not (groups['node-1'] | select('search', inventory_hostname) | list)"
    - name: initialize lxd cluster - coordinator
      shell: cat setup_coordinator.yml | lxd init --preseed
      args:
        chdir: /yquake2-bot/cluster_test_virtual/
      when: "groups['node-1'] | select('search', inventory_hostname) | list"
    - name: initialize lxd cluster - joining nodes
-     command: cat setup_node.yml | lxd init --preseed
+     shell: cat setup_node.yml | lxd init --preseed
      args:
        chdir: /yquake2-bot/cluster_test_virtual/
-     when: not "groups['node-1'] | select('search', inventory_hostname) | list"
+     when: "not (groups['node-1'] | select('search', inventory_hostname) | list)"
    - name: initialize lxc network
      command: lxc network create main
+     when: "groups['node-1'] | select('search', inventory_hostname) | list"
    - name: initialize lxc containers
      command: lxc launch images:ubuntu/20.04 {{ group_names[0] }}-container-{{ item }}
      with_sequence: start=1 end="{{ end_at }}"
@@ -46,9 +76,6 @@
    - name: lxc containers - setup system dependencies - install
      command: lxc exec {{ group_names[0] }}-container-{{ item }} -- apt-get -y install build-essential libgl1-mesa-dev libsdl2-dev libogg-dev libvorbis-dev libopenal-dev zlib1g-dev python3-dev git libcurl4-openssl-dev xvfb python3 python3-pip
      with_sequence: start=1 end="{{ end_at }}"
-  #- name: lxc containers - disable ipv6 networking
-  #  command: lxc exec {{ group_names[0] }}-container-{{ item }} -- sudo --login --user ubuntu bash -ilc "sysctl -w net.ipv6.conf.all.disable_ipv6=1 && sysctl -w net.ipv6.conf.default.disable_ipv6=1 && sysctl -w net.ipv6.conf.lo.disable_ipv6=1"
-  #  with_sequence: start=1 end="{{ end_at }}"
    - name: lxc containers - git clone yquake2 and make release directory
      command: lxc exec {{ group_names[0] }}-container-{{ item }} -- sudo --login --user ubuntu bash -ilc "git clone https://github.com/CanntAim/yquake2-bot.git && mkdir yquake2-bot/release && mkdir --parents ~/.yq2/baseq2"
      with_sequence: start=1 end="{{ end_at }}"
@@ -98,3 +125,19 @@
      with_sequence: start=1 end="{{ end_at }}"
      args:
        chdir: /yquake2-bot/cluster_test_virtual/
+   - name: fetch certificate
+     fetch:
+       src: /var/snap/lxd/common/lxd/cluster.crt
+       dest: ./
+       flat: yes
+     when: "groups['node-1'] | select('search', inventory_hostname) | list"
+#   - name: Copy the file from mwiapp01 to mwiapp02 using Method Pull
+#     tags: sync-pull
+#     synchronize:
+#       src: "/var/snap/lxd/common/lxd/cluster.crt"
+#       dest: "/yquake2-bot/cluster_test_virtual/cluster.crt"
+#       mode: pull
+#     delegate_to: nodes
+#     register: syncfile
+#     run_once: true
+#     when: "groups['node-1'] | select('search', inventory_hostname) | list"

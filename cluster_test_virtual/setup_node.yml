@@ -1,0 +1,23 @@
+config: {}
+networks: []
+storage_pools: []
+profiles: []
+projects: []
+cluster:
+  server_name: node-2
+  enabled: true
+  member_config:
+  - entity: storage-pool
+    name: local
+    key: size
+    value: 8GB
+    description: '"size" property for storage pool "local"'
+  - entity: storage-pool
+    name: local
+    key: source
+    value: ""
+    description: '"source" property for storage pool "local"'
+  cluster_address: 11.0.0.10:8443
+  server_address: 11.0.0.20:8443
+  cluster_password: test
+  cluster_certificate_path: /var/lib/snapd/hostfs/yquake2-bot/cluster_test_virtual/cluster.crt

@@ -4,7 +4,7 @@ config:
 networks: []
 storage_pools:
 - config:
-    size: 8GB
+    size: 10GB
   description: ""
   name: local
   driver: btrfs
